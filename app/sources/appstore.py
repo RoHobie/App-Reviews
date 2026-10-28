@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import logging
 import random
 import time
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from dateutil import parser as date_parser
 import requests

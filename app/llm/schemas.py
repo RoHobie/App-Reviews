@@ -15,7 +15,7 @@ Key Invariants:
     - User quotes must reference review IDs, never hallucinated text (Section 10).
 """
 
-from typing import Dict, List, Literal, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 # Review Gate Types (D2)

@@ -3,7 +3,6 @@ Unit tests for proof review ranking, category priority formula, and version sign
 """
 
 import pandas as pd
-import pytest
 
 from app.pipeline.s06_summarize import compute_priority_scores, compute_proof_ranking
 from app.pipeline.s07_aggregate import compute_version_signals

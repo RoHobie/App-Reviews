@@ -26,8 +26,6 @@ RUN mkdir -p /app/data && chown -R appuser:appuser /app
 # Copy application and dashboard source code
 COPY app /app/app
 COPY dashboard /app/dashboard
-COPY README.md /app/README.md
-COPY agent_instruction.md /app/agent_instruction.md
 
 # Set ownership to appuser
 RUN chown -R appuser:appuser /app

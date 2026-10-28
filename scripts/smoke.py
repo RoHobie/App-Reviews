@@ -18,11 +18,9 @@ import logging
 import os
 import sys
 import time
+from pathlib import Path
 
 # Ensure project root is in sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent if "Path" in dir() else "."))
-
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings

@@ -5,14 +5,11 @@ using deterministic Fake LLM and synthetic review fixtures.
 
 import csv
 import json
-import os
-import shutil
-from pathlib import Path
 import pytest
 
 from app.core.config import settings
 from app.core.db import get_db_context, init_db
-from app.core.models import Run, RunStage
+from app.core.models import Run
 from app.pipeline import (
     s02_clean,
     s03_sample_taxonomy,
@@ -193,11 +190,11 @@ class TestPipelineE2E:
         assert (run_dir / "classifications.csv").exists()
 
         # Execute Stage 5: Reconciliation
-        rec_res = s05_reconcile.run_stage(run_id)
+        s05_reconcile.run_stage(run_id)
         assert (run_dir / "taxonomy_final.json").exists()
 
         # Execute Stage 6: Summarization
-        sum_res = s06_summarize.run_stage(run_id)
+        s06_summarize.run_stage(run_id)
         assert (run_dir / "summary.json").exists()
         with open(run_dir / "summary.json", "r", encoding="utf-8") as f:
             summary_data = json.load(f)
@@ -205,7 +202,7 @@ class TestPipelineE2E:
             assert "prioritized_action_plan" in summary_data
 
         # Execute Stage 7: Aggregation
-        agg_res = s07_aggregate.run_stage(run_id)
+        s07_aggregate.run_stage(run_id)
         assert (run_dir / "aggregates.json").exists()
         with open(run_dir / "aggregates.json", "r", encoding="utf-8") as f:
             aggregates_data = json.load(f)

@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import logging
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -145,19 +144,13 @@ class LLMClient(ABC):
         )
 
 
-def get_llm_client(
-    provider_override: Optional[str] = None,
-    api_keys: Optional[List[str]] = None,
-) -> LLMClient:
-    """Factory creating the active LLM client based on configuration or explicit/active BYOK keys."""
+def get_llm_client(provider_override: Optional[str] = None) -> LLMClient:
+    """Create the configured LLM client (Gemini, or the offline fake for tests)."""
     provider = (provider_override or settings.llm_provider).lower().strip()
     if provider == "fake":
         from app.llm.fake import FakeLLMClient
         return FakeLLMClient()
-    elif provider == "gemini":
-        from app.core.runner import get_active_run_keys
+    if provider == "gemini":
         from app.llm.gemini import GeminiClient
-        active_keys = api_keys or get_active_run_keys() or settings.get_gemini_api_keys()
-        return GeminiClient(api_keys=active_keys)
-    else:
-        raise ValueError(f"Unsupported LLM provider: {provider}. Google Gemini is the exclusive provider.")
+        return GeminiClient()
+    raise ValueError(f"Unsupported LLM provider: {provider}. Use 'gemini' or 'fake'.")

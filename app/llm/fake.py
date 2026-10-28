@@ -6,10 +6,9 @@ Purpose:
     without requiring active internet connection or Gemini API credentials.
 """
 
-import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
+from typing import Any, Dict, List, Tuple, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -24,7 +23,6 @@ from app.llm.schemas import (
     ExecutiveSummaryOutput,
     NullCategory,
     PriorityItem,
-    ProposedCategory,
     ReconciliationOutput,
     ReviewClassification,
     SampleReviewTypeItem,

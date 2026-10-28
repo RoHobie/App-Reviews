@@ -14,29 +14,23 @@
 document.addEventListener("DOMContentLoaded", () => {
   // State variables
   let currentRunId = null;
-  let pollingInterval = null;
+  let pollTimer = null;
   let activeCharts = {};
+
+  // Escape text from reviews / LLM output before inserting it as HTML
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
 
   // DOM Elements
   const setupBanner = document.getElementById("setup-banner");
   const runWarningBanner = document.getElementById("run-warning-banner");
   const runWarningText = document.getElementById("run-warning-text");
-
-  // BYOK Elements
-  const byokPill = document.getElementById("byok-pill");
-  const byokPillDot = document.getElementById("byok-pill-dot");
-  const byokPillText = document.getElementById("byok-pill-text");
-  const btnOpenByokBanner = document.getElementById("btn-open-byok-banner");
-  const byokModal = document.getElementById("byok-modal");
-  const btnByokCloseX = document.getElementById("btn-byok-close-x");
-  const btnByokCancel = document.getElementById("btn-byok-cancel");
-  const btnByokSave = document.getElementById("btn-byok-save");
-  const btnByokClear = document.getElementById("btn-byok-clear");
-  const byokKeyInput = document.getElementById("byok-key-input");
-  const byokStatusBadge = document.getElementById("byok-status-badge");
-  const byokFingerprintDisplay = document.getElementById("byok-fingerprint-display");
-  const byokModalAlert = document.getElementById("byok-modal-alert");
-  const byokSaveSpinner = document.getElementById("byok-save-spinner");
 
   let isLlmConfigured = false;
 
@@ -118,6 +112,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const targetBtn = document.querySelector(`[data-tab="${tabId}"]`);
     if (targetBtn) targetBtn.classList.add("active");
+
+    // Bring the tab bar into view if the user is still up in the hero section
+    const nav = document.querySelector(".tabs-nav");
+    if (nav && nav.getBoundingClientRect().top > window.innerHeight * 0.6) {
+      nav.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   tabBtns.forEach(btn => {
@@ -140,208 +140,19 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // -------------------------------------------------------------------
-  // BYOK (Bring Your Own Key) & Health Controller
+  // Health check
   // -------------------------------------------------------------------
-
-  function setByokAlert(msg, type = "info") {
-    if (!byokModalAlert) return;
-    if (!msg) {
-      byokModalAlert.style.display = "none";
-      byokModalAlert.textContent = "";
-      return;
-    }
-    byokModalAlert.className = `byok-modal-alert ${type}`;
-    byokModalAlert.textContent = msg;
-    byokModalAlert.style.display = "block";
-  }
-
-  async function checkByokStatus() {
-    try {
-      const resp = await fetch("/api/byok");
-      if (!resp.ok) return;
-      const data = await resp.json();
-
-      if (data.configured) {
-        isLlmConfigured = true;
-        if (byokPillDot) byokPillDot.className = "byok-pill-dot active";
-        if (byokPillText) {
-          byokPillText.textContent = data.masked_key ? `Gemini: ${data.masked_key}` : "Gemini: Active";
-        }
-        if (byokStatusBadge) {
-          byokStatusBadge.className = "badge badge-success";
-          byokStatusBadge.textContent = data.source === "session" ? "Active (Session Key)" : "Active (Environment Key)";
-        }
-        if (byokFingerprintDisplay) {
-          byokFingerprintDisplay.textContent = data.masked_key || "Configured";
-        }
-        if (btnByokClear) {
-          btnByokClear.disabled = (data.source !== "session");
-          btnByokClear.title = (data.source === "environment")
-            ? "Environment keys cannot be disconnected from session"
-            : "Disconnect session key";
-        }
-        if (setupBanner) setupBanner.style.display = "none";
-      } else {
-        isLlmConfigured = false;
-        if (byokPillDot) byokPillDot.className = "byok-pill-dot";
-        if (byokPillText) byokPillText.textContent = "Gemini: Missing Key";
-        if (byokStatusBadge) {
-          byokStatusBadge.className = "badge badge-danger";
-          byokStatusBadge.textContent = "Not Configured";
-        }
-        if (byokFingerprintDisplay) {
-          byokFingerprintDisplay.textContent = "None";
-        }
-        if (btnByokClear) {
-          btnByokClear.disabled = true;
-          btnByokClear.title = "No active session key to disconnect";
-        }
-        if (setupBanner) setupBanner.style.display = "flex";
-      }
-    } catch (err) {
-      console.warn("BYOK status check failed:", err);
-    }
-  }
-
   async function checkHealth() {
     try {
       const resp = await fetch("/health");
       const data = await resp.json();
-      if (!data.llm_configured) {
-        isLlmConfigured = false;
-        if (setupBanner) setupBanner.style.display = "flex";
-      } else {
-        isLlmConfigured = true;
-        if (setupBanner) setupBanner.style.display = "none";
-      }
+      isLlmConfigured = !!data.llm_configured;
+      if (setupBanner) setupBanner.style.display = isLlmConfigured ? "none" : "flex";
     } catch (err) {
       console.warn("Health check error:", err);
     }
   }
 
-  function openByokModal() {
-    if (!byokModal) return;
-    setByokAlert(null);
-    if (byokKeyInput) byokKeyInput.value = "";
-    if (typeof byokModal.showModal === "function") {
-      byokModal.showModal();
-    } else {
-      byokModal.style.display = "block";
-    }
-    checkByokStatus();
-    if (byokKeyInput) {
-      setTimeout(() => byokKeyInput.focus(), 60);
-    }
-  }
-
-  function closeByokModal() {
-    if (!byokModal) return;
-    // CRITICAL: Zero-storage cleanup of DOM input
-    if (byokKeyInput) byokKeyInput.value = "";
-    setByokAlert(null);
-    if (typeof byokModal.close === "function") {
-      byokModal.close();
-    } else {
-      byokModal.style.display = "none";
-    }
-  }
-
-  // Wire BYOK Modal triggers
-  if (byokPill) byokPill.addEventListener("click", openByokModal);
-  if (btnOpenByokBanner) btnOpenByokBanner.addEventListener("click", openByokModal);
-  if (btnByokCloseX) btnByokCloseX.addEventListener("click", closeByokModal);
-  if (btnByokCancel) btnByokCancel.addEventListener("click", closeByokModal);
-
-  if (byokModal) {
-    byokModal.addEventListener("click", (e) => {
-      if (e.target === byokModal) {
-        closeByokModal();
-      }
-    });
-  }
-
-  if (byokKeyInput) {
-    byokKeyInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        if (btnByokSave) btnByokSave.click();
-      }
-    });
-  }
-
-  // BYOK Save Action
-  if (btnByokSave) {
-    btnByokSave.addEventListener("click", async () => {
-      const enteredKey = byokKeyInput ? byokKeyInput.value.trim() : "";
-      // CRITICAL ZERO-STORAGE INVARIANT:
-      // Clear plaintext key from DOM input immediately so it never lingers
-      if (byokKeyInput) byokKeyInput.value = "";
-
-      if (!enteredKey) {
-        setByokAlert("Please enter a valid Gemini API key.", "error");
-        return;
-      }
-
-      btnByokSave.disabled = true;
-      if (byokSaveSpinner) byokSaveSpinner.style.display = "inline";
-      setByokAlert("Verifying API key with Google Gemini API...", "info");
-
-      try {
-        const resp = await fetch("/api/byok", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: enteredKey }),
-        });
-        const data = await resp.json();
-
-        if (!resp.ok) {
-          throw new Error(data.detail || "Failed to verify and store API key.");
-        }
-
-        setByokAlert("Key verified successfully! Registered to secure session.", "success");
-        await checkByokStatus();
-        await checkHealth();
-
-        setTimeout(() => {
-          closeByokModal();
-        }, 900);
-      } catch (err) {
-        console.warn("BYOK save error:", err);
-        setByokAlert(err.message || "Failed to verify key. Please check your key and try again.", "error");
-      } finally {
-        btnByokSave.disabled = false;
-        if (byokSaveSpinner) byokSaveSpinner.style.display = "none";
-        if (byokKeyInput) byokKeyInput.value = "";
-      }
-    });
-  }
-
-  // BYOK Disconnect Action
-  if (btnByokClear) {
-    btnByokClear.addEventListener("click", async () => {
-      btnByokClear.disabled = true;
-      setByokAlert("Disconnecting session key...", "info");
-      try {
-        const resp = await fetch("/api/byok", { method: "DELETE" });
-        if (!resp.ok) {
-          const data = await resp.json();
-          throw new Error(data.detail || "Failed to disconnect session key.");
-        }
-        if (byokKeyInput) byokKeyInput.value = "";
-        setByokAlert("Session key disconnected.", "info");
-        await checkByokStatus();
-        await checkHealth();
-      } catch (err) {
-        console.warn("BYOK clear error:", err);
-        setByokAlert(err.message || "Failed to disconnect session key.", "error");
-      } finally {
-        btnByokClear.disabled = false;
-      }
-    });
-  }
-
-  // Initial status check
-  checkByokStatus();
   checkHealth();
 
   // -------------------------------------------------------------------
@@ -448,8 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
 
     if (!isLlmConfigured) {
-      openByokModal();
-      setByokAlert("A Gemini API key is required to run analysis. Please enter and verify your key below.", "error");
+      alert("Analysis is temporarily unavailable. Please try again later.");
       return;
     }
 
@@ -525,156 +335,156 @@ document.addEventListener("DOMContentLoaded", () => {
     s07_aggregate: { num: 7, label: "Aggregate", title: "Stage 7 of 7: Computing aggregates & prioritized action plan" },
   };
 
+  const TERMINAL_STATUSES = ["completed", "failed", "cancelled", "interrupted"];
+
+  function stopProgressPolling() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+
+  function setProgressHeader(title, badgeClass, badgeText, extra = "") {
+    if (progressTitle) progressTitle.textContent = title;
+    if (progressSubtitle) {
+      progressSubtitle.innerHTML = `Run ID: <code>${escapeHtml(currentRunId)}</code> &bull; <span class="badge ${badgeClass}">${escapeHtml(badgeText)}</span>${extra}`;
+    }
+  }
+
+  function showStatusBox(kind, html) {
+    if (!progressStatusBox) return;
+    progressStatusBox.className = `status-alert status-alert-${kind}`;
+    progressStatusBox.style.display = "flex";
+    progressStatusBox.innerHTML = html;
+  }
+
+  function renderLog(lines) {
+    if (!lines || lines.length === 0) return;
+    // Only auto-scroll when the user is already near the bottom
+    const nearBottom = logTerminal.scrollHeight - logTerminal.scrollTop - logTerminal.clientHeight < 40;
+    logTerminal.textContent = lines.join("\n");
+    if (nearBottom) logTerminal.scrollTop = logTerminal.scrollHeight;
+  }
+
+  function stageDoneCount(stages) {
+    return (stages || []).filter(s => s.status === "completed").length;
+  }
+
+  function renderRunProgress(runId, runData) {
+    const stages = runData.stages || [];
+    updateStepper(stages);
+
+    const activeStage = stages.find(s => s.status === "running");
+    const failedStage = stages.find(s => s.status === "failed");
+    const done = stageDoneCount(stages);
+    const safeId = escapeHtml(runId);
+
+    if (runData.status === "queued") {
+      setProgressHeader("Waiting for the previous run to finish...", "badge-neutral", "Queued");
+    } else if (runData.status === "running") {
+      if (activeStage && STAGE_META[activeStage.stage_name]) {
+        const meta = STAGE_META[activeStage.stage_name];
+        const secs = activeStage.started_at
+          ? Math.max(1, Math.round((Date.now() - new Date(activeStage.started_at).getTime()) / 1000))
+          : null;
+        setProgressHeader(`${meta.title}...`, "badge-info", "Running",
+          ` &bull; ${done}/7 steps done${secs ? ` &bull; this step: ${secs}s` : ""}`);
+      } else {
+        setProgressHeader("Starting the next step...", "badge-info", "Running", ` &bull; ${done}/7 steps done`);
+      }
+    } else if (runData.status === "completed") {
+      btnCancelRun.style.display = "none";
+      setProgressHeader("Analysis completed successfully!", "badge-success", "Completed");
+      stages.forEach(stg => {
+        const el = document.getElementById(`step-${stg.stage_name}`);
+        if (el) el.className = "step-node completed";
+      });
+      tabBtnReport.style.display = "block";
+      setTimeout(() => { if (currentRunId === runId) loadReport(runId); }, 900);
+    } else if (runData.status === "failed") {
+      btnCancelRun.style.display = "none";
+      const failMsg = runData.error?.message || "An error occurred during pipeline execution.";
+      const stageLabel = failedStage ? (STAGE_META[failedStage.stage_name]?.label || failedStage.stage_name) : null;
+      setProgressHeader("Analysis failed", "badge-danger", "Failed");
+      showStatusBox("danger", `
+        <div>
+          <strong>Something went wrong${stageLabel ? ` during “${escapeHtml(stageLabel)}”` : ""}.</strong>
+          <div style="font-size:0.85rem; margin-top:0.3rem;">${escapeHtml(failMsg)}</div>
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-secondary btn-sm" onclick="window.resumeRun('${safeId}')">Resume from last step</button>
+          <button class="btn btn-primary btn-sm" onclick="window.rerunRun('${safeId}')">Start over</button>
+        </div>
+      `);
+    } else if (runData.status === "cancelled") {
+      btnCancelRun.style.display = "none";
+      setProgressHeader("Analysis cancelled", "badge-warning", "Cancelled");
+      showStatusBox("warning", `
+        <div>This run was cancelled.</div>
+        <button class="btn btn-secondary btn-sm" onclick="window.rerunRun('${safeId}')">Start over</button>
+      `);
+    } else if (runData.status === "interrupted") {
+      btnCancelRun.style.display = "none";
+      setProgressHeader("Analysis interrupted", "badge-neutral", "Interrupted");
+      showStatusBox("info", `
+        <div>The app restarted while this analysis was running. You can pick up from the last finished step.</div>
+        <button class="btn btn-primary btn-sm" onclick="window.resumeRun('${safeId}')">Resume run</button>
+      `);
+    }
+  }
+
   function startProgressPolling(runId) {
-    if (pollingInterval) clearInterval(pollingInterval);
+    stopProgressPolling();
     currentRunId = runId;
-    if (progressTitle) progressTitle.textContent = "Connecting to pipeline worker...";
-    if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-neutral">Connecting...</span>`;
+    setProgressHeader("Connecting to the analysis worker...", "badge-neutral", "Connecting");
     if (progressStatusBox) {
       progressStatusBox.style.display = "none";
       progressStatusBox.innerHTML = "";
     }
+    logTerminal.textContent = "Waiting for the run to start...";
     btnCancelRun.style.display = "inline-block";
     btnCancelRun.disabled = false;
     btnCancelRun.textContent = "Cancel run";
     resetStepper();
 
-    const pollFn = async () => {
+    // Chained timeouts (not setInterval) so slow responses never overlap,
+    // and every step checks the user hasn't switched to another run.
+    const poll = async () => {
+      let terminal = false;
       try {
-        const resp = await fetch(`/runs/${runId}`);
-        if (!resp.ok) return;
+        const [runResp, logResp] = await Promise.all([
+          fetch(`/runs/${runId}`),
+          fetch(`/runs/${runId}/logs?lines=200`),
+        ]);
+        if (currentRunId !== runId) return;
 
-        const runData = await resp.json();
-        updateStepper(runData.stages);
-
-        // Fetch live log tail
-        const logResp = await fetch(`/runs/${runId}/logs?lines=60`);
-        if (logResp.ok) {
-          const logData = await logResp.json();
-          if (logData.lines && logData.lines.length > 0) {
-            logTerminal.textContent = logData.lines.join("\n");
-            logTerminal.scrollTop = logTerminal.scrollHeight;
-          }
-        }
-
-        // Determine active or failed stage
-        const activeStage = (runData.stages || []).find(s => s.status === "running");
-        const failedStage = (runData.stages || []).find(s => s.status === "failed");
-
-        // Dynamic Header and Subtitle Mapping
-        if (runData.status === "queued") {
-          if (progressTitle) progressTitle.textContent = "Waiting in queue for pipeline worker...";
-          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-neutral">Queued</span>`;
-        } else if (runData.status === "running") {
-          if (activeStage && STAGE_META[activeStage.stage_name]) {
-            const meta = STAGE_META[activeStage.stage_name];
-            if (progressTitle) progressTitle.textContent = `${meta.title}...`;
-            if (progressSubtitle) {
-              const durText = activeStage.started_at ? ` (running for ${Math.max(1, Math.round((Date.now() - new Date(activeStage.started_at).getTime()) / 1000))}s)` : "";
-              progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-info">Running</span> &bull; <strong>${meta.label}</strong>${durText}`;
-            }
-          } else {
-            if (progressTitle) progressTitle.textContent = "Pipeline executing stages...";
-            if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-info">Running</span>`;
-          }
-        }
-
-        // Terminal state checks
-        if (runData.status === "completed") {
-          clearInterval(pollingInterval);
-          pollingInterval = null;
-          btnCancelRun.style.display = "none";
-          if (progressTitle) progressTitle.textContent = "Analysis completed successfully!";
-          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-success">Completed</span>`;
-          (runData.stages || []).forEach(stg => {
-            const el = document.getElementById(`step-${stg.stage_name}`);
-            if (el) el.className = "step-node completed";
-          });
-          tabBtnReport.style.display = "block";
-          loadReport(runId);
-          setTimeout(() => switchTab("tab-report"), 900);
-        } else if (runData.status === "failed") {
-          clearInterval(pollingInterval);
-          pollingInterval = null;
-          btnCancelRun.style.display = "none";
-          const failMsg = runData.error?.message || "An error occurred during pipeline execution.";
-          const failCode = runData.error?.code || "FAILED";
-          if (progressTitle) progressTitle.textContent = "Analysis failed";
-          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-danger">Failed (${failCode})</span>`;
-          if (progressStatusBox) {
-            progressStatusBox.className = "status-alert status-alert-danger";
-            progressStatusBox.style.display = "flex";
-            progressStatusBox.innerHTML = `
-              <div>
-                <strong>Pipeline Error [${failCode}]:</strong> ${failMsg}
-                ${failedStage ? `<div style="font-size:0.82rem; margin-top:0.3rem;">Failed at stage: <code>${failedStage.stage_name}</code></div>` : ""}
-              </div>
-              <div style="display:flex; gap:0.5rem;">
-                <button class="btn btn-secondary btn-sm" onclick="window.resumeRun('${runId}')">Resume from checkpoint</button>
-                <button class="btn btn-primary btn-sm" onclick="window.rerunRun('${runId}')">Retry run</button>
-              </div>
-            `;
-          }
-        } else if (runData.status === "cancelled") {
-          clearInterval(pollingInterval);
-          pollingInterval = null;
-          btnCancelRun.style.display = "none";
-          if (progressTitle) progressTitle.textContent = "Analysis cancelled";
-          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-warning">Cancelled</span>`;
-          if (progressStatusBox) {
-            progressStatusBox.className = "status-alert status-alert-warning";
-            progressStatusBox.style.display = "flex";
-            progressStatusBox.innerHTML = `
-              <div>Run <code>${runId}</code> was cancelled by user request.</div>
-              <button class="btn btn-secondary btn-sm" onclick="window.rerunRun('${runId}')">Restart Run</button>
-            `;
-          }
-        } else if (runData.status === "interrupted") {
-          clearInterval(pollingInterval);
-          pollingInterval = null;
-          btnCancelRun.style.display = "none";
-          if (progressTitle) progressTitle.textContent = "Analysis interrupted";
-          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-neutral">Interrupted</span>`;
-          if (progressStatusBox) {
-            progressStatusBox.className = "status-alert status-alert-info";
-            progressStatusBox.style.display = "flex";
-            progressStatusBox.innerHTML = `
-              <div>The application process or container restarted while this analysis was running. You can resume from the last saved stage checkpoint.</div>
-              <button class="btn btn-primary btn-sm" onclick="window.resumeRun('${runId}')">Resume Run</button>
-            `;
-          }
+        if (logResp.ok) renderLog((await logResp.json()).lines);
+        if (runResp.ok) {
+          const runData = await runResp.json();
+          if (currentRunId !== runId) return;
+          renderRunProgress(runId, runData);
+          terminal = TERMINAL_STATUSES.includes(runData.status);
         }
       } catch (err) {
         console.error("Polling error:", err);
       }
+      if (!terminal && currentRunId === runId) {
+        pollTimer = setTimeout(poll, 1500);
+      }
     };
-
-    // Immediate initial poll followed by 2000ms periodic interval
-    pollFn();
-    pollingInterval = setInterval(pollFn, 2000);
+    poll();
   }
 
   function resetStepper() {
-    const stages = [
-      "s01_collect", "s02_clean", "s03_sample_taxonomy",
-      "s04_classify", "s05_reconcile", "s06_summarize", "s07_aggregate"
-    ];
-    stages.forEach(stg => {
+    Object.keys(STAGE_META).forEach(stg => {
       const el = document.getElementById(`step-${stg}`);
-      if (el) {
-        el.className = "step-node";
-      }
+      if (el) el.className = "step-node";
     });
   }
 
   function updateStepper(stages) {
-    if (!stages || !Array.isArray(stages)) return;
-
+    if (!Array.isArray(stages)) return;
     stages.forEach(stg => {
       const el = document.getElementById(`step-${stg.stage_name}`);
-      if (el) {
-        el.className = `step-node ${stg.status}`;
-      }
+      if (el) el.className = `step-node ${stg.status}`;
     });
   }
 
@@ -684,9 +494,6 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       btnCancelRun.disabled = true;
       btnCancelRun.textContent = "Cancelling...";
-      if (progressSubtitle) {
-        progressSubtitle.innerHTML += ` &bull; <span class="badge badge-warning">Cancelling...</span>`;
-      }
       await fetch(`/runs/${currentRunId}/cancel`, { method: "POST" });
     } catch (err) {
       alert("Error requesting cancellation: " + err.message);
@@ -762,20 +569,20 @@ document.addEventListener("DOMContentLoaded", () => {
       if (item.actions && item.actions.length > 0) {
         actionsHtml = item.actions.map(a => `
           <div style="margin-bottom: 0.4rem;">
-            <strong>${a.action}</strong>
-            <span class="badge ${a.effort === 'S' ? 'badge-success' : a.effort === 'M' ? 'badge-info' : 'badge-warning'}">${a.effort}</span>
-            <span class="badge badge-neutral">Impact: ${a.impact}/5</span>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">${a.rationale || ''}</div>
+            <strong>${escapeHtml(a.action)}</strong>
+            <span class="badge ${a.effort === 'S' ? 'badge-success' : a.effort === 'M' ? 'badge-info' : 'badge-warning'}">${escapeHtml(a.effort)}</span>
+            <span class="badge badge-neutral">Impact: ${escapeHtml(a.impact)}/5</span>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(a.rationale)}</div>
           </div>
         `).join("");
       } else {
-        actionsHtml = `<span style="color: var(--text-muted); font-size: 0.85rem;">${item.narrative || 'Scheduled for investigation'}</span>`;
+        actionsHtml = `<span style="color: var(--text-muted); font-size: 0.85rem;">${escapeHtml(item.narrative || 'Scheduled for investigation')}</span>`;
       }
 
       tr.innerHTML = `
         <td style="font-weight: 800; font-size: 1.1rem; color: var(--primary);">#${item.priority_rank}</td>
         <td>
-          <strong>${item.category_name}</strong>
+          <strong>${escapeHtml(item.category_name)}</strong>
         </td>
         <td><span class="badge badge-info" style="font-size: 0.85rem;">${item.priority_score.toFixed(4)}</span></td>
         <td><strong>${item.review_count}</strong></td>
@@ -792,12 +599,12 @@ document.addEventListener("DOMContentLoaded", () => {
     (data.charts?.per_version_table || []).forEach(v => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><strong>${v.version}</strong></td>
+        <td><strong>${escapeHtml(v.version)}</strong></td>
         <td>${v.review_count}</td>
         <td>${v.avg_rating.toFixed(2)}</td>
         <td><span class="badge ${v.pct_complaints > 50 ? 'badge-danger' : 'badge-neutral'}">${v.pct_complaints}%</span></td>
-        <td>${(v.top_categories || []).join(", ") || "None"}</td>
-        <td>${v.dev_reply_rate_play !== null ? `${v.dev_reply_rate_play}%` : '<span style="color: var(--text-muted)">N/A (iOS)</span>'}</td>
+        <td>${escapeHtml((v.top_categories || []).join(", ") || "None")}</td>
+        <td>${v.dev_reply_rate_play != null ? `${v.dev_reply_rate_play}%` : '<span style="color: var(--text-muted)">N/A (iOS)</span>'}</td>
       `;
       tableVersionBody.appendChild(tr);
     });
@@ -814,11 +621,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><span class="badge ${u.rating <= 2 ? 'badge-danger' : 'badge-neutral'}">${u.rating}/5</span></td>
-        <td><span class="badge badge-neutral">${u.store}</span></td>
-        <td>${u.version}</td>
-        <td><span class="badge badge-warning" style="font-size: 0.75rem;">${u.reason}</span></td>
+        <td><span class="badge badge-neutral">${escapeHtml(u.store)}</span></td>
+        <td>${escapeHtml(u.version)}</td>
+        <td><span class="badge badge-warning" style="font-size: 0.75rem;">${escapeHtml(u.reason)}</span></td>
         <td>${u.thumbs_up}</td>
-        <td style="max-width: 450px; font-size: 0.85rem;">${u.content}</td>
+        <td style="max-width: 450px; font-size: 0.85rem;">${escapeHtml(u.content)}</td>
       `;
       tableUnaddressedBody.appendChild(tr);
     });
@@ -1012,7 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
     categories.forEach(cat => {
       const tr = document.createElement("tr");
       const tdName = document.createElement("td");
-      tdName.innerHTML = `<strong>${cat.name}</strong>`;
+      tdName.innerHTML = `<strong>${escapeHtml(cat.name)}</strong>`;
       tr.appendChild(tdName);
 
       versions.forEach(v => {
@@ -1058,8 +865,8 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="issue-header" onclick="this.parentElement.querySelector('.issue-body').classList.toggle('hidden');">
           <div class="issue-title-group">
             <span class="badge badge-primary">#${item.priority_rank}</span>
-            <div class="issue-title">${cSummary.category_name}</div>
-            <span class="badge ${sigBadgeClass}">${sig.signal.replace('_', ' ')}</span>
+            <div class="issue-title">${escapeHtml(cSummary.category_name)}</div>
+            <span class="badge ${sigBadgeClass}">${escapeHtml(sig.signal.replace(/_/g, ' '))}</span>
             ${sig.dev_claims_fixed && sig.dev_claims_fixed.length > 0 ? '<span class="badge badge-info" title="Dev replies mention fixed">Dev Claims Fixed</span>' : ''}
           </div>
           <div>
@@ -1068,20 +875,20 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
         <div class="issue-body">
-          <p style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">${cSummary.headline}</p>
-          <p style="font-size: 0.925rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 0.75rem;">${cSummary.summary}</p>
+          <p style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">${escapeHtml(cSummary.headline)}</p>
+          <p style="font-size: 0.925rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 0.75rem;">${escapeHtml(cSummary.summary)}</p>
 
           <div style="margin: 0.75rem 0;">
             <strong style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Root Causes:</strong>
             <ul style="padding-left: 1.25rem; font-size: 0.875rem; margin-top: 0.25rem;">
-              ${(cSummary.root_causes || []).map(rc => `<li>${rc}</li>`).join('')}
+              ${(cSummary.root_causes || []).map(rc => `<li>${escapeHtml(rc)}</li>`).join('')}
             </ul>
           </div>
 
           <div style="margin: 0.75rem 0;">
             <strong style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Affected Versions:</strong>
             <div style="display: flex; gap: 0.35rem; margin-top: 0.25rem;">
-              ${(cSummary.affected_versions || []).map(v => `<span class="badge badge-neutral">${v}</span>`).join('')}
+              ${(cSummary.affected_versions || []).map(v => `<span class="badge badge-neutral">${escapeHtml(v)}</span>`).join('')}
             </div>
           </div>
 
@@ -1091,7 +898,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <button class="btn btn-secondary btn-sm" onclick="window.fetchProofReviews('${data.run.id}', '${cid}', this)">Load Proof Reviews</button>
             </div>
             <div class="proof-reviews-target" id="proof-target-${cid}">
-              ${(cSummary.user_quotes || []).map(q => `<span class="badge badge-neutral" style="margin-right: 0.25rem;">ID: ${q}</span>`).join('')}
+              ${(cSummary.user_quotes || []).map(q => `<span class="badge badge-neutral" style="margin-right: 0.25rem;">ID: ${escapeHtml(q)}</span>`).join('')}
             </div>
           </div>
         </div>
@@ -1118,12 +925,12 @@ document.addEventListener("DOMContentLoaded", () => {
       target.innerHTML = res.reviews.map(r => `
         <div class="proof-review-box">
           <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.8rem; color: var(--text-muted);">
-            <span><strong>${r.rating}/5</strong> | ${r.store} (${r.version})</span>
+            <span><strong>${r.rating}/5</strong> | ${escapeHtml(r.store)} (${escapeHtml(r.version)})</span>
             <span>Relevance: ${r.relevance}/5 | Severity: ${r.severity}/5 | Upvotes: ${r.thumbs_up}</span>
           </div>
-          <p style="color: var(--text-primary); font-size: 0.875rem;">${r.content}</p>
-          ${r.note ? `<div style="font-size: 0.8rem; color: var(--primary); margin-top: 0.25rem;">Note: ${r.note}</div>` : ''}
-          ${r.dev_reply ? `<div style="font-size: 0.8rem; background: var(--bg-surface); padding: 0.4rem; border-radius: 4px; margin-top: 0.35rem;"><strong>Developer Reply:</strong> ${r.dev_reply}</div>` : ''}
+          <p style="color: var(--text-primary); font-size: 0.875rem;">${escapeHtml(r.content)}</p>
+          ${r.note ? `<div style="font-size: 0.8rem; color: var(--primary); margin-top: 0.25rem;">Note: ${escapeHtml(r.note)}</div>` : ''}
+          ${r.dev_reply ? `<div style="font-size: 0.8rem; background: var(--bg-surface); padding: 0.4rem; border-radius: 4px; margin-top: 0.35rem;"><strong>Developer Reply:</strong> ${escapeHtml(r.dev_reply)}</div>` : ''}
         </div>
       `).join("");
       btnElement.textContent = "Refreshed";
@@ -1151,10 +958,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       runs.forEach(r => {
         const tr = document.createElement("tr");
-        const statusBadge = `<span class="badge ${r.status === 'completed' ? 'badge-success' : r.status === 'failed' ? 'badge-danger' : r.status === 'running' ? 'badge-info' : 'badge-neutral'}">${r.status}</span>`;
+        const statusBadge = `<span class="badge ${r.status === 'completed' ? 'badge-success' : r.status === 'failed' ? 'badge-danger' : r.status === 'running' ? 'badge-info' : 'badge-neutral'}">${escapeHtml(r.status)}</span>`;
         tr.innerHTML = `
-          <td><code>${r.id}</code></td>
-          <td><strong>${r.app_name}</strong></td>
+          <td><code>${escapeHtml(r.id)}</code></td>
+          <td><strong>${escapeHtml(r.app_name)}</strong></td>
           <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}</td>
           <td>${statusBadge}</td>
           <td>${r.counts?.clean_total || r.counts?.fetched_total || 0}</td>
@@ -1168,7 +975,7 @@ document.addEventListener("DOMContentLoaded", () => {
         tableHistoryBody.appendChild(tr);
       });
     } catch (err) {
-      tableHistoryBody.innerHTML = `<tr><td colspan='7'>Error loading history: ${err.message}</td></tr>`;
+      tableHistoryBody.innerHTML = `<tr><td colspan='7'>Error loading history: ${escapeHtml(err.message)}</td></tr>`;
     }
   }
 

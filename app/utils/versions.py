@@ -8,7 +8,7 @@ Purpose:
 """
 
 import re
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 VERSION_CLEAN_REGEX = re.compile(r"^v?(?:ersion)?\s*([0-9]+(?:\.[0-9]+)*)", re.IGNORECASE)
 

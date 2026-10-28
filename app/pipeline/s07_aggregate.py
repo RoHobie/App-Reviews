@@ -19,19 +19,15 @@ Standalone Execution:
 """
 
 import argparse
-from datetime import datetime, timezone
 import json
 import logging
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from dateutil import parser as date_parser
 import pandas as pd
 
 from app.core.config import settings
-from app.core.db import get_db_context
 from app.core.errors import ReviewIntelError
-from app.core.models import Run
 from app.utils.versions import sort_versions
 
 logger = logging.getLogger("review_intel.pipeline.s07_aggregate")
@@ -151,7 +147,6 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         taxonomy = json.load(f)
 
     categories = list(taxonomy.get("categories", []))
-    null_cat = taxonomy.get("null_category", {"id": "null", "name": "Vague Complaints"})
 
     # Clean numeric fields
     df_clean["rating_num"] = pd.to_numeric(df_clean["rating"], errors="coerce").fillna(0).astype(int)

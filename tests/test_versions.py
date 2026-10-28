@@ -2,7 +2,6 @@
 Unit tests for tolerant mobile app version parsing and semantic sorting.
 """
 
-import pytest
 from app.utils.versions import normalize_version, sort_versions
 
 

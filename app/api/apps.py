@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.core.errors import AppNotFoundError, InvalidConfigError
+from app.core.errors import AppNotFoundError
 from app.sources.appstore import AppStoreSource
 from app.sources.playstore import PlayStoreSource
 

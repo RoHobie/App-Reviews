@@ -15,20 +15,19 @@ Standalone Execution:
 """
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import json
 import logging
 from pathlib import Path
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
 from app.core.config import settings
 from app.core.db import get_db_context
 from app.core.errors import LLMBlockedError, LLMInvalidOutputError, ReviewIntelError, RunCancelledError
-from app.core.models import Run, RunWarning
+from app.core.models import Run
 from app.core.runner import is_run_cancelled
 from app.llm.client import get_llm_client
 from app.llm.schemas import BatchClassificationOutput, ReviewClassification
@@ -275,8 +274,7 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         all_reviews[i:i + BATCH_SIZE]
         for i in range(0, total_reviews, BATCH_SIZE)
     ]
-    logger.info("Stage 4 classifying %d reviews in %d batches (concurrency: %d)",
-                total_reviews, len(batches), settings.max_llm_concurrency)
+    logger.info("Classifying %d reviews in %d batches", total_reviews, len(batches))
 
     # Load completed batches from checkpoints if any exist
     completed_batch_results: Dict[int, List[Dict[str, Any]]] = {}
@@ -290,7 +288,8 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("Could not load checkpoint %s: %s", batch_file, exc)
 
-    logger.info("Found %d already completed checkpoint batches.", len(completed_batch_results))
+    if completed_batch_results:
+        logger.info("Reusing %d batches already classified before the resume.", len(completed_batch_results))
 
     total_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -318,11 +317,12 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         with open(checkpoint_path, "w", encoding="utf-8") as cpf:
             json.dump({"batch_idx": b_idx, "rows": rows, "usage": usage}, cpf, indent=2)
 
-        classified_so_far = sum(len(batch_rows) for batch_rows in completed_batch_results.values())
+        # Rows are per (review, category), so count reviews from the batches themselves
+        reviews_done = sum(len(batches[i]) for i in completed_batch_results)
         logger.info(
-            "Classified batch %d/%d (%d/%d reviews processed, %.1f%%)",
-            b_idx + 1, len(batches), min(classified_so_far, total_reviews), total_reviews,
-            ((b_idx + 1) / len(batches)) * 100
+            "Classified batch %d/%d (%d/%d reviews, %.0f%%)",
+            b_idx + 1, len(batches), reviews_done, total_reviews,
+            reviews_done / total_reviews * 100,
         )
 
         # Rate limiting delay between batches (if more batches remain)

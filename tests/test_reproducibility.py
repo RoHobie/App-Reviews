@@ -9,10 +9,6 @@ Verifies:
 
 import csv
 import json
-import os
-import shutil
-from pathlib import Path
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
@@ -213,7 +209,6 @@ class TestReproducibilityChecklist:
         from app.pipeline import s03_sample_taxonomy
         monkeypatch.setattr(s03_sample_taxonomy, "get_llm_client", lambda: real_client)
 
-        orig_sleep = s03_sample_taxonomy.time.sleep
         monkeypatch.setattr(s03_sample_taxonomy.time, "sleep", lambda s: sleep_durations.append(s))
 
         res = s03_sample_taxonomy.run_stage(run_id)

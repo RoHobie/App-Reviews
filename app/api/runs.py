@@ -14,26 +14,31 @@ Design Invariants:
 
 from datetime import datetime, timezone
 import json
-from pathlib import Path
+import shutil
 from typing import Any, Dict, List, Literal, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
-from app.api.byok import get_request_byok_keys, mask_key
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.errors import InvalidConfigError, ReviewIntelError
-from app.core.models import Run, RunStage, RunWarning, utc_now
+from app.core.models import iso_utc, Run, RunStage, utc_now
 from app.core.runner import (
     PIPELINE_STAGES,
     init_run_stages,
     launch_run_in_background,
-    register_run_keys,
     request_run_cancellation,
 )
+
+PROMPT_VERSIONS = {
+    "taxonomy": "taxonomy_v1",
+    "classify": "classify_v1",
+    "reconcile": "reconcile_v1",
+    "summarize": "summarize_v1",
+    "executive": "executive_v1",
+}
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -116,74 +121,73 @@ def generate_run_id() -> str:
     return f"run_{timestamp}_{suffix}"
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, summary="Create and queue a new analysis run")
-def create_run(config: RunConfig, request: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """
-    Validates run configuration, initializes persistent run directory and DB entry,
-    and dispatches pipeline execution to background worker.
-    Supports BYOK keys via HttpOnly session cookie or X-Gemini-API-Key header.
-    """
-    byok_keys = get_request_byok_keys(request)
-    server_keys = settings.get_gemini_api_keys()
-    if not byok_keys and not server_keys and settings.llm_provider != "fake":
+def _ensure_llm_configured() -> None:
+    if settings.llm_provider != "fake" and not settings.get_gemini_api_keys():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "error": {
                     "code": "LLM_UNAVAILABLE",
-                    "message": "No Gemini API key configured. Please configure your API key via the BYOK setting or environment.",
+                    "message": "Analysis is temporarily unavailable. Please try again later.",
                 }
             },
         )
 
+
+def _create_and_launch_run(
+    config_dict: Dict[str, Any],
+    db: Session,
+    *,
+    parent_run_id: Optional[str] = None,
+    reuse_snapshot: bool = False,
+) -> str:
+    """Write config.json, insert the run + pending stages, and queue it."""
     run_id = generate_run_id()
     run_dir = settings.get_run_dir(run_id)
 
-    # Register transient in-memory BYOK keys for background worker
-    if byok_keys:
-        register_run_keys(run_id, byok_keys)
+    if reuse_snapshot and parent_run_id:
+        # Replay on the parent's raw snapshot with its warm LLM cache
+        prev_dir = settings.get_run_dir(parent_run_id)
+        snapshot = prev_dir / "raw_reviews.csv"
+        if not snapshot.exists():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": {"code": "SNAPSHOT_NOT_FOUND", "message": f"No raw snapshot found in prior run '{parent_run_id}'."}},
+            )
+        shutil.copy2(snapshot, run_dir / "raw_reviews.csv")
+        new_cache_dir = settings.get_run_cache_dir(run_id)
+        for item in (prev_dir / "llm_cache").glob("*.json"):
+            shutil.copy2(item, new_cache_dir / item.name)
 
-    # Save config.json in run directory for auditability and reproducibility (D9)
-    # Security: Raw API keys are strictly redacted; only masked fingerprints are stored.
-    config_dict = config.model_dump()
-    active_fp = mask_key(byok_keys[0]) if byok_keys else (mask_key(server_keys[0]) if server_keys else None)
-    config_file_payload = {
+    # config.json for auditability and reproducibility (D9)
+    payload = {
         "run_id": run_id,
+        "parent_run_id": parent_run_id,
+        "reuse_snapshot": reuse_snapshot,
         "config": config_dict,
         "created_at": utc_now().isoformat(),
         "git_sha": settings.git_sha,
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model,
         "llm_summary_model": settings.llm_summary_model or settings.llm_model,
-        "byok_active": bool(byok_keys),
-        "llm_key_fingerprint": active_fp,
-        "prompt_versions": {
-            "taxonomy": "taxonomy_v1",
-            "classify": "classify_v1",
-            "reconcile": "reconcile_v1",
-            "summarize": "summarize_v1",
-            "executive": "executive_v1",
-        },
+        "prompt_versions": PROMPT_VERSIONS,
     }
     with open(run_dir / "config.json", "w", encoding="utf-8") as f:
-        json.dump(config_file_payload, f, indent=2)
+        json.dump(payload, f, indent=2)
 
-    # Persist in SQLite
-    new_run = Run(
-        id=run_id,
-        app_name=config.app_name,
-        status="queued",
-        config=json.dumps(config_dict),
-    )
-    db.add(new_run)
+    db.add(Run(id=run_id, app_name=config_dict["app_name"], status="queued", config=json.dumps(config_dict)))
     db.commit()
-
-    # Pre-populate all stages as 'pending' for immediate UI stepper display
     init_run_stages(run_id, db)
 
-    # Launch pipeline background execution
-    launch_run_in_background(run_id=run_id, reuse_snapshot=False)
+    launch_run_in_background(run_id=run_id, reuse_snapshot=reuse_snapshot)
+    return run_id
 
+
+@router.post("", status_code=status.HTTP_201_CREATED, summary="Create and queue a new analysis run")
+def create_run(config: RunConfig, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Validate the run configuration and queue the pipeline in the background."""
+    _ensure_llm_configured()
+    run_id = _create_and_launch_run(config.model_dump(), db)
     return {"run_id": run_id, "status": "queued"}
 
 
@@ -222,9 +226,9 @@ def get_run(run_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
         "id": run.id,
         "app_name": run.app_name,
         "status": run.status,
-        "created_at": run.created_at.isoformat() if run.created_at else None,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "created_at": iso_utc(run.created_at),
+        "started_at": iso_utc(run.started_at),
+        "finished_at": iso_utc(run.finished_at),
         "config": run.get_config_dict(),
         "counts": run.get_counts_dict(),
         "token_usage": run.get_token_usage_dict(),
@@ -242,14 +246,12 @@ def get_run(run_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
 @router.post("/{run_id}/rerun", status_code=status.HTTP_201_CREATED, summary="Rerun analysis with same config")
 def rerun_run(
     run_id: str,
-    request: Request,
     payload: Optional[RerunRequest] = None,
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
-    Spawns a new immutable run using the configuration of a previous run.
-    If reuse_snapshot is true, replays on the prior run's raw_reviews.csv snapshot
-    with hot LLM cache (reproducibility verification).
+    Spawn a new immutable run with a previous run's configuration.
+    With reuse_snapshot, replay on the prior raw snapshot with its LLM cache.
     """
     prev_run = db.query(Run).filter(Run.id == run_id).first()
     if not prev_run:
@@ -258,74 +260,11 @@ def rerun_run(
             detail={"error": {"code": "RUN_NOT_FOUND", "message": f"Run '{run_id}' not found."}},
         )
 
-    byok_keys = get_request_byok_keys(request)
-    cfg_dict = prev_run.get_config_dict()
-    config = RunConfig(**cfg_dict)
-
-    new_run_id = generate_run_id()
-    new_run_dir = settings.get_run_dir(new_run_id)
-
-    if byok_keys:
-        register_run_keys(new_run_id, byok_keys)
-
+    _ensure_llm_configured()
     reuse_snapshot = payload.reuse_snapshot if payload else False
 
-    # If reusing snapshot, copy raw_reviews.csv and llm_cache from previous run
-    if reuse_snapshot:
-        prev_run_dir = settings.get_run_dir(run_id)
-        prev_snapshot = prev_run_dir / "raw_reviews.csv"
-        if not prev_snapshot.exists():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"error": {"code": "SNAPSHOT_NOT_FOUND", "message": f"No raw snapshot found in prior run '{run_id}'."}},
-            )
-        import shutil
-        shutil.copy2(prev_snapshot, new_run_dir / "raw_reviews.csv")
-
-        # Copy existing LLM cache entries
-        prev_cache_dir = prev_run_dir / "llm_cache"
-        new_cache_dir = new_run_dir / "llm_cache"
-        new_cache_dir.mkdir(parents=True, exist_ok=True)
-        if prev_cache_dir.exists():
-            for item in prev_cache_dir.glob("*.json"):
-                shutil.copy2(item, new_cache_dir / item.name)
-
-    # Persist config file
-    config_file_payload = {
-        "run_id": new_run_id,
-        "parent_run_id": run_id,
-        "reuse_snapshot": reuse_snapshot,
-        "config": cfg_dict,
-        "created_at": utc_now().isoformat(),
-        "git_sha": settings.git_sha,
-        "llm_provider": settings.llm_provider,
-        "llm_model": settings.llm_model,
-        "byok_active": bool(byok_keys),
-        "llm_key_fingerprint": mask_key(byok_keys[0]) if byok_keys else None,
-        "prompt_versions": {
-            "taxonomy": "taxonomy_v1",
-            "classify": "classify_v1",
-            "reconcile": "reconcile_v1",
-            "summarize": "summarize_v1",
-            "executive": "executive_v1",
-        },
-    }
-    with open(new_run_dir / "config.json", "w", encoding="utf-8") as f:
-        json.dump(config_file_payload, f, indent=2)
-
-    new_run = Run(
-        id=new_run_id,
-        app_name=config.app_name,
-        status="queued",
-        config=json.dumps(cfg_dict),
-    )
-    db.add(new_run)
-    db.commit()
-
-    # Pre-populate all stages as 'pending' for immediate UI stepper display
-    init_run_stages(new_run_id, db)
-
-    launch_run_in_background(run_id=new_run_id, reuse_snapshot=reuse_snapshot)
+    cfg_dict = RunConfig(**prev_run.get_config_dict()).model_dump()
+    new_run_id = _create_and_launch_run(cfg_dict, db, parent_run_id=run_id, reuse_snapshot=reuse_snapshot)
     return {"run_id": new_run_id, "status": "queued", "reused_snapshot": reuse_snapshot}
 
 
@@ -369,8 +308,9 @@ def resume_run(run_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
             detail={"error": {"code": "RUN_NOT_FOUND", "message": f"Run '{run_id}' not found."}},
         )
 
-    if run.status in ("completed", "running"):
+    if run.status in ("completed", "running", "queued"):
         return {"run_id": run_id, "status": run.status, "message": f"Run is already {run.status}."}
+    _ensure_llm_configured()
 
     # Find first uncompleted stage
     resume_stage = PIPELINE_STAGES[0]

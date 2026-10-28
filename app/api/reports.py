@@ -17,8 +17,7 @@ Design Invariants:
 
 from io import StringIO
 import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -27,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.models import Run
+from app.core.models import iso_utc, Run
 
 router = APIRouter(prefix="/runs", tags=["reports"])
 
@@ -82,9 +81,9 @@ def get_run_report(run_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]
             "id": run.id,
             "app_name": run.app_name,
             "status": run.status,
-            "created_at": run.created_at.isoformat() if run.created_at else None,
-            "started_at": run.started_at.isoformat() if run.started_at else None,
-            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "created_at": iso_utc(run.created_at),
+            "started_at": iso_utc(run.started_at),
+            "finished_at": iso_utc(run.finished_at),
             "config": run.get_config_dict(),
             "counts": run.get_counts_dict(),
             "token_usage": run.get_token_usage_dict(),

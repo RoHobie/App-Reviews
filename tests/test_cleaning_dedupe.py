@@ -2,7 +2,6 @@
 Unit tests for data cleaning, sanitization, PII scrubbing, Hinglish script checking, and deduplication.
 """
 
-import pytest
 from rapidfuzz import fuzz
 
 from app.utils.text import (

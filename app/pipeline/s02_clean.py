@@ -27,7 +27,6 @@ import argparse
 import csv
 import json
 import logging
-from pathlib import Path
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -90,8 +89,7 @@ def run_stage(run_id: str) -> Dict[str, Any]:
     # Read raw reviews
     df = pd.read_csv(raw_csv, dtype=str).fillna("")
     total_raw = len(df)
-    logger.info("Stage 2 starting cleaning for run_id=%s with %d raw reviews (lang_mode=%s)",
-                run_id, total_raw, lang_mode)
+    logger.info("Cleaning %d raw reviews (language filter: %s)", total_raw, lang_mode)
 
     dropped_empty = 0
     dropped_short = 0

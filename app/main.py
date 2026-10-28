@@ -19,13 +19,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.apps import router as apps_router
-from app.api.byok import get_request_byok_keys, router as byok_router
 from app.api.reports import router as reports_router
 from app.api.runs import router as runs_router
 from app.core.config import settings
@@ -98,7 +97,6 @@ app.add_middleware(
 app.include_router(runs_router)
 app.include_router(apps_router)
 app.include_router(reports_router)
-app.include_router(byok_router)
 
 
 
@@ -113,24 +111,12 @@ async def review_intel_error_handler(request: Request, exc: ReviewIntelError):
 
 
 @app.get("/health", summary="Health check and configuration probe")
-def health_check(request: Request) -> Dict[str, Any]:
-    """
-    Returns system liveness and LLM configuration readiness.
-
-    Returns:
-        JSON object with status, llm_configured flag, and provider details.
-        Supports BYOK: If user configured a key via BYOK session cookie or header,
-        llm_configured reports true.
-    """
-    byok_keys = get_request_byok_keys(request)
-    gemini_keys = settings.get_gemini_api_keys()
+def health_check() -> Dict[str, Any]:
+    """Liveness plus whether the analysis engine (LLM) is configured."""
     llm_provider = settings.llm_provider.lower()
-    llm_configured = bool(gemini_keys) or bool(byok_keys) or llm_provider == "fake"
-
     return {
         "status": "ok",
-        "llm_configured": llm_configured,
-        "byok_configured": bool(byok_keys),
+        "llm_configured": llm_provider == "fake" or bool(settings.get_gemini_api_keys()),
         "provider": llm_provider,
         "version": "0.1.0",
         "git_sha": settings.git_sha,

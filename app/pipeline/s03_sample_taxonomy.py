@@ -29,7 +29,7 @@ from app.core.db import get_db_context
 from app.core.errors import ReviewIntelError
 from app.core.models import Run
 from app.llm.client import get_llm_client
-from app.llm.schemas import CategoryDefinition, NullCategory, TaxonomyOutput
+from app.llm.schemas import TaxonomyOutput
 
 logger = logging.getLogger("review_intel.pipeline.s03_sample_taxonomy")
 
@@ -250,7 +250,6 @@ def run_stage(run_id: str) -> Dict[str, Any]:
             run.estimated_cost = round(run.estimated_cost + cost, 6)
             db.commit()
 
-    logger.info("Taxonomy discovered %d categories for run %s", len(clean_categories), run_id)
     return {
         "sample_size": len(sampled_df),
         "categories_count": len(clean_categories),

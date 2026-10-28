@@ -14,7 +14,7 @@ Key Invariants:
 
 import re
 import unicodedata
-from typing import Optional, Tuple
+from typing import Tuple
 
 # Indian mobile numbers:
 # Supports +91 or 0 prefix, optional spaces/hyphens, followed by 10 digits starting with 6, 7, 8, or 9

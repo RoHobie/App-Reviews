@@ -17,7 +17,7 @@ import logging
 import random
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
+from typing import Any, Dict, Tuple, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -33,12 +33,11 @@ T = TypeVar("T", bound=BaseModel)
 class GeminiClient(LLMClient):
     """Client for Google Gemini models via google-genai SDK with multi-key rotation."""
 
-    def __init__(self, api_keys: Optional[List[str]] = None):
-        keys = api_keys or settings.get_gemini_api_keys()
+    def __init__(self):
+        keys = settings.get_gemini_api_keys()
         if not keys:
             raise LLMUnavailableError(
-                "Missing GEMINI_API_KEY / GEMINI_API_KEYS. "
-                "Please configure GEMINI_API_KEY in your .env file or environment.",
+                "The analysis engine is not configured on the server (GEMINI_API_KEY is missing).",
                 retryable=False,
             )
 

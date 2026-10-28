@@ -12,7 +12,7 @@ Invariants:
 
 from datetime import datetime, timezone
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from sqlalchemy import (
     Column,
     DateTime,
@@ -29,6 +29,19 @@ from app.core.db import Base
 def utc_now() -> datetime:
     """Return timezone-aware current UTC time."""
     return datetime.now(timezone.utc)
+
+
+def iso_utc(dt: Optional[datetime]) -> Optional[str]:
+    """ISO-8601 string with an explicit UTC offset.
+
+    SQLite drops tzinfo on read, so naive values are UTC and must be tagged,
+    otherwise browsers parse them as local time.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 class Run(Base):
@@ -94,9 +107,9 @@ class Run(Base):
             "id": self.id,
             "app_name": self.app_name,
             "status": self.status,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "created_at": iso_utc(self.created_at),
+            "started_at": iso_utc(self.started_at),
+            "finished_at": iso_utc(self.finished_at),
             "counts": self.get_counts_dict(),
             "estimated_cost": self.estimated_cost,
             "error_code": self.error_code,
@@ -135,8 +148,8 @@ class RunStage(Base):
         return {
             "stage_name": self.stage_name,
             "status": self.status,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "started_at": iso_utc(self.started_at),
+            "finished_at": iso_utc(self.finished_at),
             "duration_seconds": self.duration_seconds,
             "output_summary": summary,
             "error_message": self.error_message,
@@ -172,5 +185,5 @@ class RunWarning(Base):
             "code": self.code,
             "message": self.message,
             "details": details_obj,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_at": iso_utc(self.created_at),
         }

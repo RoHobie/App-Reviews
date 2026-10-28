@@ -16,11 +16,10 @@ Standalone Execution:
 """
 
 import argparse
-import csv
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict
 
 import pandas as pd
 
@@ -50,7 +49,6 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         taxonomy = json.load(f)
 
     df_class = pd.read_csv(classifications_csv, dtype=str).fillna("")
-    total_rows = len(df_class)
 
     # Identify proposed categories
     proposals = df_class[df_class["proposed_new_category"] != ""]["proposed_new_category"].tolist()
