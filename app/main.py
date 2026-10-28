@@ -24,7 +24,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.apps import router as apps_router
+from app.api.reports import router as reports_router
+from app.api.runs import router as runs_router
 from app.core.config import settings
+from app.core.errors import ReviewIntelError
 
 # Configure standard logging format
 logging.basicConfig(
@@ -80,10 +84,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-from app.api.runs import router as runs_router
-from app.api.apps import router as apps_router
-from app.api.reports import router as reports_router
-from app.core.errors import ReviewIntelError
+# Enable CORS for API clients and dashboard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Mount API routers
 app.include_router(runs_router)
