@@ -22,6 +22,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const runWarningBanner = document.getElementById("run-warning-banner");
   const runWarningText = document.getElementById("run-warning-text");
 
+  // BYOK Elements
+  const byokPill = document.getElementById("byok-pill");
+  const byokPillDot = document.getElementById("byok-pill-dot");
+  const byokPillText = document.getElementById("byok-pill-text");
+  const btnOpenByokBanner = document.getElementById("btn-open-byok-banner");
+  const byokModal = document.getElementById("byok-modal");
+  const btnByokCloseX = document.getElementById("btn-byok-close-x");
+  const btnByokCancel = document.getElementById("btn-byok-cancel");
+  const btnByokSave = document.getElementById("btn-byok-save");
+  const btnByokClear = document.getElementById("btn-byok-clear");
+  const byokKeyInput = document.getElementById("byok-key-input");
+  const byokStatusBadge = document.getElementById("byok-status-badge");
+  const byokFingerprintDisplay = document.getElementById("byok-fingerprint-display");
+  const byokModalAlert = document.getElementById("byok-modal-alert");
+  const byokSaveSpinner = document.getElementById("byok-save-spinner");
+
+  let isLlmConfigured = false;
+
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabPanes = document.querySelectorAll(".tab-pane");
 
@@ -122,21 +140,208 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // -------------------------------------------------------------------
-  // Health Check
+  // BYOK (Bring Your Own Key) & Health Controller
   // -------------------------------------------------------------------
+
+  function setByokAlert(msg, type = "info") {
+    if (!byokModalAlert) return;
+    if (!msg) {
+      byokModalAlert.style.display = "none";
+      byokModalAlert.textContent = "";
+      return;
+    }
+    byokModalAlert.className = `byok-modal-alert ${type}`;
+    byokModalAlert.textContent = msg;
+    byokModalAlert.style.display = "block";
+  }
+
+  async function checkByokStatus() {
+    try {
+      const resp = await fetch("/api/byok");
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      if (data.configured) {
+        isLlmConfigured = true;
+        if (byokPillDot) byokPillDot.className = "byok-pill-dot active";
+        if (byokPillText) {
+          byokPillText.textContent = data.masked_key ? `Gemini: ${data.masked_key}` : "Gemini: Active";
+        }
+        if (byokStatusBadge) {
+          byokStatusBadge.className = "badge badge-success";
+          byokStatusBadge.textContent = data.source === "session" ? "Active (Session Key)" : "Active (Environment Key)";
+        }
+        if (byokFingerprintDisplay) {
+          byokFingerprintDisplay.textContent = data.masked_key || "Configured";
+        }
+        if (btnByokClear) {
+          btnByokClear.disabled = (data.source !== "session");
+          btnByokClear.title = (data.source === "environment")
+            ? "Environment keys cannot be disconnected from session"
+            : "Disconnect session key";
+        }
+        if (setupBanner) setupBanner.style.display = "none";
+      } else {
+        isLlmConfigured = false;
+        if (byokPillDot) byokPillDot.className = "byok-pill-dot";
+        if (byokPillText) byokPillText.textContent = "Gemini: Missing Key";
+        if (byokStatusBadge) {
+          byokStatusBadge.className = "badge badge-danger";
+          byokStatusBadge.textContent = "Not Configured";
+        }
+        if (byokFingerprintDisplay) {
+          byokFingerprintDisplay.textContent = "None";
+        }
+        if (btnByokClear) {
+          btnByokClear.disabled = true;
+          btnByokClear.title = "No active session key to disconnect";
+        }
+        if (setupBanner) setupBanner.style.display = "flex";
+      }
+    } catch (err) {
+      console.warn("BYOK status check failed:", err);
+    }
+  }
+
   async function checkHealth() {
     try {
       const resp = await fetch("/health");
       const data = await resp.json();
       if (!data.llm_configured) {
-        setupBanner.style.display = "flex";
+        isLlmConfigured = false;
+        if (setupBanner) setupBanner.style.display = "flex";
       } else {
-        setupBanner.style.display = "none";
+        isLlmConfigured = true;
+        if (setupBanner) setupBanner.style.display = "none";
       }
     } catch (err) {
       console.warn("Health check error:", err);
     }
   }
+
+  function openByokModal() {
+    if (!byokModal) return;
+    setByokAlert(null);
+    if (byokKeyInput) byokKeyInput.value = "";
+    if (typeof byokModal.showModal === "function") {
+      byokModal.showModal();
+    } else {
+      byokModal.style.display = "block";
+    }
+    checkByokStatus();
+    if (byokKeyInput) {
+      setTimeout(() => byokKeyInput.focus(), 60);
+    }
+  }
+
+  function closeByokModal() {
+    if (!byokModal) return;
+    // CRITICAL: Zero-storage cleanup of DOM input
+    if (byokKeyInput) byokKeyInput.value = "";
+    setByokAlert(null);
+    if (typeof byokModal.close === "function") {
+      byokModal.close();
+    } else {
+      byokModal.style.display = "none";
+    }
+  }
+
+  // Wire BYOK Modal triggers
+  if (byokPill) byokPill.addEventListener("click", openByokModal);
+  if (btnOpenByokBanner) btnOpenByokBanner.addEventListener("click", openByokModal);
+  if (btnByokCloseX) btnByokCloseX.addEventListener("click", closeByokModal);
+  if (btnByokCancel) btnByokCancel.addEventListener("click", closeByokModal);
+
+  if (byokModal) {
+    byokModal.addEventListener("click", (e) => {
+      if (e.target === byokModal) {
+        closeByokModal();
+      }
+    });
+  }
+
+  if (byokKeyInput) {
+    byokKeyInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (btnByokSave) btnByokSave.click();
+      }
+    });
+  }
+
+  // BYOK Save Action
+  if (btnByokSave) {
+    btnByokSave.addEventListener("click", async () => {
+      const enteredKey = byokKeyInput ? byokKeyInput.value.trim() : "";
+      // CRITICAL ZERO-STORAGE INVARIANT:
+      // Clear plaintext key from DOM input immediately so it never lingers
+      if (byokKeyInput) byokKeyInput.value = "";
+
+      if (!enteredKey) {
+        setByokAlert("Please enter a valid Gemini API key.", "error");
+        return;
+      }
+
+      btnByokSave.disabled = true;
+      if (byokSaveSpinner) byokSaveSpinner.style.display = "inline";
+      setByokAlert("Verifying API key with Google Gemini API...", "info");
+
+      try {
+        const resp = await fetch("/api/byok", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: enteredKey }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          throw new Error(data.detail || "Failed to verify and store API key.");
+        }
+
+        setByokAlert("Key verified successfully! Registered to secure session.", "success");
+        await checkByokStatus();
+        await checkHealth();
+
+        setTimeout(() => {
+          closeByokModal();
+        }, 900);
+      } catch (err) {
+        console.warn("BYOK save error:", err);
+        setByokAlert(err.message || "Failed to verify key. Please check your key and try again.", "error");
+      } finally {
+        btnByokSave.disabled = false;
+        if (byokSaveSpinner) byokSaveSpinner.style.display = "none";
+        if (byokKeyInput) byokKeyInput.value = "";
+      }
+    });
+  }
+
+  // BYOK Disconnect Action
+  if (btnByokClear) {
+    btnByokClear.addEventListener("click", async () => {
+      btnByokClear.disabled = true;
+      setByokAlert("Disconnecting session key...", "info");
+      try {
+        const resp = await fetch("/api/byok", { method: "DELETE" });
+        if (!resp.ok) {
+          const data = await resp.json();
+          throw new Error(data.detail || "Failed to disconnect session key.");
+        }
+        if (byokKeyInput) byokKeyInput.value = "";
+        setByokAlert("Session key disconnected.", "info");
+        await checkByokStatus();
+        await checkHealth();
+      } catch (err) {
+        console.warn("BYOK clear error:", err);
+        setByokAlert(err.message || "Failed to disconnect session key.", "error");
+      } finally {
+        btnByokClear.disabled = false;
+      }
+    });
+  }
+
+  // Initial status check
+  checkByokStatus();
   checkHealth();
 
   // -------------------------------------------------------------------
@@ -241,6 +446,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------
   runForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+
+    if (!isLlmConfigured) {
+      openByokModal();
+      setByokAlert("A Gemini API key is required to run analysis. Please enter and verify your key below.", "error");
+      return;
+    }
 
     const stores = [];
     if (storePlayCheck.checked) stores.push("playstore");

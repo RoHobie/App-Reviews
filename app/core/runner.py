@@ -35,6 +35,28 @@ _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pipeline_worke
 _cancel_requested: Dict[str, bool] = {}
 # Active run tracking for graceful SIGTERM shutdown
 _active_run_id: Optional[str] = None
+# Transient in-memory storage for Bring Your Own Keys (BYOK) per run
+# Purged immediately upon run completion/failure to prevent memory retention
+_run_api_keys: Dict[str, List[str]] = {}
+
+
+def register_run_keys(run_id: str, keys: List[str]) -> None:
+    """Associates transient BYOK API keys with an active run."""
+    if keys:
+        _run_api_keys[run_id] = list(keys)
+
+
+def get_active_run_keys(run_id: Optional[str] = None) -> List[str]:
+    """Retrieves active BYOK keys for a run if present, falling back to server environment."""
+    target_id = run_id or get_active_run_id()
+    if target_id and target_id in _run_api_keys:
+        return _run_api_keys[target_id]
+    return settings.get_gemini_api_keys()
+
+
+def clear_run_keys(run_id: str) -> None:
+    """Purges transient BYOK keys from memory upon run completion or failure."""
+    _run_api_keys.pop(run_id, None)
 
 
 def set_active_run_id(run_id: Optional[str]) -> None:
@@ -198,6 +220,7 @@ def execute_pipeline(run_id: str, reuse_snapshot: bool = False, resume_from_stag
     finally:
         set_active_run_id(None)
         clear_run_cancellation(run_id)
+        clear_run_keys(run_id)
 
 
 def _dispatch_stage(stage_name: str, run_id: str, reuse_snapshot: bool) -> Dict[str, Any]:

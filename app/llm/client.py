@@ -145,14 +145,19 @@ class LLMClient(ABC):
         )
 
 
-def get_llm_client(provider_override: Optional[str] = None) -> LLMClient:
-    """Factory creating the active LLM client based on configuration or explicit override."""
+def get_llm_client(
+    provider_override: Optional[str] = None,
+    api_keys: Optional[List[str]] = None,
+) -> LLMClient:
+    """Factory creating the active LLM client based on configuration or explicit/active BYOK keys."""
     provider = (provider_override or settings.llm_provider).lower().strip()
     if provider == "fake":
         from app.llm.fake import FakeLLMClient
         return FakeLLMClient()
     elif provider == "gemini":
+        from app.core.runner import get_active_run_keys
         from app.llm.gemini import GeminiClient
-        return GeminiClient()
+        active_keys = api_keys or get_active_run_keys() or settings.get_gemini_api_keys()
+        return GeminiClient(api_keys=active_keys)
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}. Google Gemini is the exclusive provider.")

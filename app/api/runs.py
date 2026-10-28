@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
+from app.api.byok import get_request_byok_keys, mask_key
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.errors import InvalidConfigError, ReviewIntelError
@@ -30,6 +31,7 @@ from app.core.runner import (
     PIPELINE_STAGES,
     init_run_stages,
     launch_run_in_background,
+    register_run_keys,
     request_run_cancellation,
 )
 
@@ -115,17 +117,36 @@ def generate_run_id() -> str:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Create and queue a new analysis run")
-def create_run(config: RunConfig, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def create_run(config: RunConfig, request: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Validates run configuration, initializes persistent run directory and DB entry,
     and dispatches pipeline execution to background worker.
+    Supports BYOK keys via HttpOnly session cookie or X-Gemini-API-Key header.
     """
-    # Fast validation for app existence can be extended here
+    byok_keys = get_request_byok_keys(request)
+    server_keys = settings.get_gemini_api_keys()
+    if not byok_keys and not server_keys and settings.llm_provider != "fake":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "LLM_UNAVAILABLE",
+                    "message": "No Gemini API key configured. Please configure your API key via the BYOK setting or environment.",
+                }
+            },
+        )
+
     run_id = generate_run_id()
     run_dir = settings.get_run_dir(run_id)
 
+    # Register transient in-memory BYOK keys for background worker
+    if byok_keys:
+        register_run_keys(run_id, byok_keys)
+
     # Save config.json in run directory for auditability and reproducibility (D9)
+    # Security: Raw API keys are strictly redacted; only masked fingerprints are stored.
     config_dict = config.model_dump()
+    active_fp = mask_key(byok_keys[0]) if byok_keys else (mask_key(server_keys[0]) if server_keys else None)
     config_file_payload = {
         "run_id": run_id,
         "config": config_dict,
@@ -134,6 +155,8 @@ def create_run(config: RunConfig, db: Session = Depends(get_db)) -> Dict[str, An
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model,
         "llm_summary_model": settings.llm_summary_model or settings.llm_model,
+        "byok_active": bool(byok_keys),
+        "llm_key_fingerprint": active_fp,
         "prompt_versions": {
             "taxonomy": "taxonomy_v1",
             "classify": "classify_v1",
@@ -217,7 +240,12 @@ def get_run(run_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
 
 
 @router.post("/{run_id}/rerun", status_code=status.HTTP_201_CREATED, summary="Rerun analysis with same config")
-def rerun_run(run_id: str, payload: Optional[RerunRequest] = None, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def rerun_run(
+    run_id: str,
+    request: Request,
+    payload: Optional[RerunRequest] = None,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
     """
     Spawns a new immutable run using the configuration of a previous run.
     If reuse_snapshot is true, replays on the prior run's raw_reviews.csv snapshot
@@ -230,11 +258,15 @@ def rerun_run(run_id: str, payload: Optional[RerunRequest] = None, db: Session =
             detail={"error": {"code": "RUN_NOT_FOUND", "message": f"Run '{run_id}' not found."}},
         )
 
+    byok_keys = get_request_byok_keys(request)
     cfg_dict = prev_run.get_config_dict()
     config = RunConfig(**cfg_dict)
 
     new_run_id = generate_run_id()
     new_run_dir = settings.get_run_dir(new_run_id)
+
+    if byok_keys:
+        register_run_keys(new_run_id, byok_keys)
 
     reuse_snapshot = payload.reuse_snapshot if payload else False
 
@@ -268,6 +300,8 @@ def rerun_run(run_id: str, payload: Optional[RerunRequest] = None, db: Session =
         "git_sha": settings.git_sha,
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model,
+        "byok_active": bool(byok_keys),
+        "llm_key_fingerprint": mask_key(byok_keys[0]) if byok_keys else None,
         "prompt_versions": {
             "taxonomy": "taxonomy_v1",
             "classify": "classify_v1",

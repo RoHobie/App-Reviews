@@ -35,6 +35,10 @@
       <h1>App <em>Review</em></h1>
     </a>
     <div class="nav-actions">
+      <button id="byok-pill" class="byok-pill" type="button" title="Configure Gemini API Key" aria-label="Configure Gemini API Key">
+        <span class="byok-pill-dot" id="byok-pill-dot"></span>
+        <span id="byok-pill-text">Gemini: Key</span>
+      </button>
       <button id="nav-btn-new" class="btn btn-primary btn-sm">New analysis</button>
       <button id="nav-btn-history" class="btn btn-secondary btn-sm">Past runs</button>
     </div>
@@ -164,8 +168,13 @@
   <div class="container">
     <!-- Health / Setup Alert Banner -->
     <div id="setup-banner" class="alert-banner warning" style="display: none;">
-      <strong>Setup required:</strong>
-      <span id="setup-banner-msg">Your analysis engine needs an API key to run. Check your configuration to get started.</span>
+      <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 1rem; flex-wrap: wrap;">
+        <div>
+          <strong>Setup required:</strong>
+          <span id="setup-banner-msg">Your analysis engine needs a Gemini API key to run.</span>
+        </div>
+        <button id="btn-open-byok-banner" class="btn btn-primary btn-sm" type="button">Configure Gemini API Key</button>
+      </div>
     </div>
 
     <!-- Active Warning Banner -->
@@ -648,6 +657,76 @@
     </div>
     <div class="footer-mark" aria-hidden="true">App Review</div>
   </footer>
+
+  <!-- BYOK Modal Dialog -->
+  <dialog id="byok-modal" class="byok-dialog">
+    <div class="byok-dialog-card">
+      <div class="byok-dialog-header">
+        <div class="byok-title-group">
+          <div class="byok-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="byok-modal-title">Bring Your Own Gemini Key</h3>
+            <p class="byok-modal-sub">Secure session authentication for AI analysis</p>
+          </div>
+        </div>
+        <button type="button" id="btn-byok-close-x" class="byok-close-btn" aria-label="Close dialog">&times;</button>
+      </div>
+
+      <div class="byok-security-badge">
+        <span class="byok-shield-icon">&#128274;</span>
+        <div>
+          <strong>Frontend Zero-Storage Security:</strong>
+          <span>Your key is sent over HTTPS to an in-memory session authenticated with an <code>HttpOnly</code> cookie. It is never saved to <code>localStorage</code>, never logged to database files, and cannot be accessed by client JavaScript.</span>
+        </div>
+      </div>
+
+      <div id="byok-current-status" class="byok-status-card">
+        <div class="byok-status-row">
+          <span class="byok-status-label">Current Status:</span>
+          <span id="byok-status-badge" class="badge badge-neutral">Checking...</span>
+        </div>
+        <div class="byok-status-row">
+          <span class="byok-status-label">Active Key Fingerprint:</span>
+          <code id="byok-fingerprint-display" class="byok-code">None</code>
+        </div>
+      </div>
+
+      <div class="byok-input-section">
+        <label for="byok-key-input" class="byok-input-label">Gemini API Key</label>
+        <div class="byok-input-wrapper">
+          <input
+            type="password"
+            id="byok-key-input"
+            class="form-input byok-input"
+            placeholder="AIzaSy..."
+            autocomplete="off"
+            spellcheck="false"
+            data-lpignore="true"
+            data-form-type="other"
+          />
+        </div>
+        <div class="byok-hint">
+          Need a key? Generate one at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio &nearr;</a> (free tier available).
+        </div>
+      </div>
+
+      <div id="byok-modal-alert" class="byok-modal-alert" style="display: none;"></div>
+
+      <div class="byok-dialog-actions">
+        <button type="button" id="btn-byok-save" class="btn btn-primary">
+          <span id="byok-save-spinner" style="display: none; margin-right: 0.4rem;">&#9203;</span>
+          Save &amp; Verify Key
+        </button>
+        <button type="button" id="btn-byok-clear" class="btn btn-secondary">Disconnect Key</button>
+        <button type="button" id="btn-byok-cancel" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </dialog>
 
   <script src="/dashboard/app.js"></script>
 </body>
