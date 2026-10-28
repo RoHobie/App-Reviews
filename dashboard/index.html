@@ -3,32 +3,169 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Review Intelligence — Mobile App Feedback Intelligence MVP</title>
+  <meta name="theme-color" content="#f5f0e6">
+  <title>App Review — Fix what your users are actually complaining about</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,400..800,0..100,0..1;1,9..144,400..800,0..100,0..1&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/dashboard/styles.css">
   <!-- Chart.js for data visualizations -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
-  <div class="container">
-    <!-- Navbar -->
-    <header class="app-navbar">
-      <div class="brand">
-        <div class="brand-icon">RI</div>
-        <div>
-          <h1>Review Intelligence <span>MVP</span></h1>
-          <p class="card-subtitle">Prioritized, version-aware product feedback from Play Store & App Store</p>
+<body data-view="tab-form">
+
+  <!-- Shared SVG symbols -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="ar-logo" viewBox="0 0 40 40">
+        <rect x="4" y="5" width="34" height="30" rx="10" fill="#16201a"/>
+        <rect x="2" y="3" width="34" height="30" rx="10" fill="#e8553a" stroke="#16201a" stroke-width="2"/>
+        <path d="M9 31 L7 39 L17 32 Z" fill="#e8553a" stroke="#16201a" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M9.4 31.4 L16 31.4" stroke="#e8553a" stroke-width="3"/>
+        <polygon points="19,9.5 22.2,15.8 29,16.6 24,21.4 25.3,28.2 19,24.9 12.7,28.2 14,21.4 9,16.6 15.8,15.8" fill="#f4cf4a" stroke="#16201a" stroke-width="1.6" stroke-linejoin="round"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <!-- Navbar -->
+  <header class="app-navbar">
+    <a class="brand" href="/dashboard" aria-label="App Review home">
+      <div class="brand-icon"><svg viewBox="0 0 40 40"><use href="#ar-logo"/></svg></div>
+      <h1>App <em>Review</em></h1>
+    </a>
+    <div class="nav-actions">
+      <button id="nav-btn-new" class="btn btn-primary btn-sm">New analysis</button>
+      <button id="nav-btn-history" class="btn btn-secondary btn-sm">Past runs</button>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="hero-inner">
+      <div class="hero-content">
+        <div class="hero-eyebrow">
+          <span class="dot"></span>
+          Feedback, but make it useful
+        </div>
+        <h2 class="hero-title">
+          Thousands of reviews. <span class="gradient-text">One clear to-do list.</span>
+        </h2>
+        <p class="hero-subtitle">
+          App Review reads every Play Store and App Store review for you, groups the complaints, tracks them release by release, and hands your team a ranked list of what to fix first.
+        </p>
+        <div class="hero-actions">
+          <a href="#run-form" class="btn btn-primary btn-lg">Analyse my app &rarr;</a>
+          <span class="hero-note">&#9201; Most runs finish in a few minutes</span>
+        </div>
+        <div class="hero-features">
+          <div class="hero-pill"><span class="pill-icon">&#10003;</span> Play Store &amp; App Store</div>
+          <div class="hero-pill"><span class="pill-icon">&#10003;</span> Version-aware</div>
+          <div class="hero-pill"><span class="pill-icon">&#10003;</span> Ranked action plans</div>
         </div>
       </div>
-      <div class="nav-actions">
-        <button id="nav-btn-new" class="btn btn-primary btn-sm">+ New Analysis</button>
-        <button id="nav-btn-history" class="btn btn-secondary btn-sm">Past Runs</button>
-      </div>
-    </header>
 
+      <!-- Hero illustration: messy reviews -> ranked priorities -->
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 560 470" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="290" cy="235" r="196" class="il-sun" opacity=".55"/>
+          <circle cx="60" cy="440" r="26" class="il-sky" stroke="#16201a" stroke-width="2"/>
+
+          <!-- messy reviews -->
+          <g class="float">
+            <g transform="translate(22 36) rotate(-7)">
+              <rect x="4" y="5" width="232" height="122" rx="14" class="il-ink"/>
+              <rect width="232" height="122" rx="14" class="il-card"/>
+              <text x="16" y="30" font-size="16" class="il-ember il-text">★☆☆☆☆</text>
+              <rect x="16" y="46" width="190" height="8" rx="4" class="il-line"/>
+              <rect x="16" y="64" width="160" height="8" rx="4" class="il-line"/>
+              <rect x="16" y="82" width="120" height="8" rx="4" class="il-line"/>
+              <rect x="16" y="100" width="54" height="12" rx="6" class="il-sun" stroke="#16201a" stroke-width="1.5"/>
+            </g>
+          </g>
+          <g class="float d2">
+            <g transform="translate(64 186) rotate(4)">
+              <rect x="4" y="5" width="232" height="112" rx="14" class="il-ink"/>
+              <rect width="232" height="112" rx="14" class="il-card"/>
+              <text x="16" y="30" font-size="16" class="il-ember il-text">★★☆☆☆</text>
+              <rect x="16" y="46" width="170" height="8" rx="4" class="il-line"/>
+              <rect x="16" y="64" width="200" height="8" rx="4" class="il-line"/>
+              <rect x="16" y="82" width="90" height="8" rx="4" class="il-line"/>
+            </g>
+          </g>
+          <g class="float d3">
+            <g transform="translate(18 326) rotate(-3)">
+              <rect x="4" y="5" width="220" height="100" rx="14" class="il-ink"/>
+              <rect width="220" height="100" rx="14" class="il-card"/>
+              <text x="16" y="30" font-size="16" class="il-ember il-text">★☆☆☆☆</text>
+              <rect x="16" y="46" width="180" height="8" rx="4" class="il-line"/>
+              <rect x="16" y="64" width="130" height="8" rx="4" class="il-line"/>
+            </g>
+          </g>
+
+          <!-- arrow -->
+          <path d="M292 262 C 312 214, 330 214, 350 244" class="il-stroke" stroke-dasharray="2 7"/>
+          <path d="M338 236 L352 246 L335 254" class="il-stroke"/>
+
+          <!-- ranked panel -->
+          <g transform="translate(350 46)">
+            <rect x="5" y="6" width="196" height="352" rx="20" class="il-ink" opacity=".25"/>
+            <rect width="196" height="352" rx="20" class="il-ink"/>
+            <text x="20" y="38" font-size="20" font-style="italic" fill="#f4cf4a" class="il-serif">What to fix</text>
+            <line x1="20" y1="52" x2="176" y2="52" stroke="#f5f0e6" stroke-opacity=".2"/>
+
+            <g transform="translate(0 70)">
+              <circle cx="34" cy="22" r="14" class="il-ember"/>
+              <text x="34" y="28" text-anchor="middle" font-size="15" fill="#fff" class="il-serif">1</text>
+              <text x="58" y="18" font-size="13" fill="#f5f0e6" class="il-text">Checkout crash</text>
+              <rect x="58" y="28" width="120" height="8" rx="4" fill="#f5f0e6" opacity=".12"/>
+              <rect x="58" y="28" width="112" height="8" rx="4" class="il-ember"/>
+              <text x="58" y="54" font-size="10.5" fill="#a9b3a4" class="il-text">412 reviews · rising</text>
+            </g>
+            <g transform="translate(0 150)">
+              <circle cx="34" cy="22" r="14" class="il-sun"/>
+              <text x="34" y="28" text-anchor="middle" font-size="15" fill="#16201a" class="il-serif">2</text>
+              <text x="58" y="18" font-size="13" fill="#f5f0e6" class="il-text">Late delivery ETA</text>
+              <rect x="58" y="28" width="120" height="8" rx="4" fill="#f5f0e6" opacity=".12"/>
+              <rect x="58" y="28" width="78" height="8" rx="4" class="il-sun"/>
+              <text x="58" y="54" font-size="10.5" fill="#a9b3a4" class="il-text">268 reviews · steady</text>
+            </g>
+            <g transform="translate(0 230)">
+              <circle cx="34" cy="22" r="14" class="il-sky"/>
+              <text x="34" y="28" text-anchor="middle" font-size="15" fill="#16201a" class="il-serif">3</text>
+              <text x="58" y="18" font-size="13" fill="#f5f0e6" class="il-text">OTP not arriving</text>
+              <rect x="58" y="28" width="120" height="8" rx="4" fill="#f5f0e6" opacity=".12"/>
+              <rect x="58" y="28" width="46" height="8" rx="4" class="il-sky"/>
+              <text x="58" y="54" font-size="10.5" fill="#a9b3a4" class="il-text">97 reviews · fixed in 5.2</text>
+            </g>
+          </g>
+
+          <!-- sticker -->
+          <g transform="translate(528 52) rotate(10)">
+            <circle r="34" cx="0" cy="3" class="il-ink"/>
+            <circle r="34" class="il-ember" stroke="#16201a" stroke-width="2"/>
+            <text x="0" y="9" text-anchor="middle" font-size="24" fill="#fff" class="il-serif" font-style="italic">#1</text>
+          </g>
+
+          <!-- rating pill -->
+          <g class="float d2">
+            <g transform="translate(300 398) rotate(-4)">
+              <rect x="3" y="4" width="170" height="46" rx="23" class="il-ink"/>
+              <rect width="170" height="46" rx="23" class="il-card"/>
+              <text x="22" y="29" font-size="14" class="il-text" fill="#16201a">v5.1 → v5.2</text>
+              <text x="118" y="29" font-size="14" class="il-text" fill="#1f5a42">4.1 → 4.6 ★</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <div class="container">
     <!-- Health / Setup Alert Banner -->
     <div id="setup-banner" class="alert-banner warning" style="display: none;">
-      <strong>⚠️ LLM Setup Required:</strong>
-      <span id="setup-banner-msg">Gemini API key is not configured. Set <code>GEMINI_API_KEY</code> in <code>.env</code> to execute live runs.</span>
+      <strong>Setup required:</strong>
+      <span id="setup-banner-msg">Your analysis engine needs an API key to run. Check your configuration to get started.</span>
     </div>
 
     <!-- Active Warning Banner -->
@@ -37,146 +174,170 @@
     </div>
 
     <!-- Navigation Tabs -->
-    <nav class="tabs-nav">
-      <button class="tab-btn active" data-tab="tab-form">New Analysis</button>
-      <button class="tab-btn" data-tab="tab-progress" id="tab-btn-progress" style="display: none;">Run Progress</button>
+    <nav class="tabs-nav" aria-label="Sections">
+      <button class="tab-btn active" data-tab="tab-form">New analysis</button>
+      <button class="tab-btn" data-tab="tab-progress" id="tab-btn-progress" style="display: none;">Run progress</button>
       <button class="tab-btn" data-tab="tab-report" id="tab-btn-report" style="display: none;">Report</button>
-      <button class="tab-btn" data-tab="tab-history">Run History</button>
+      <button class="tab-btn" data-tab="tab-history">Run history</button>
     </nav>
 
     <!-- ===================================================================
          TAB 1: NEW ANALYSIS FORM
          =================================================================== -->
     <section id="tab-form" class="tab-pane active">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <h2 class="card-title">Configure Analysis Run</h2>
-            <p class="card-subtitle">Extract and synthesize reviews for India storefront (v1)</p>
+      <div class="form-layout">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Start a new analysis</h2>
+              <p class="card-subtitle">Pull reviews from Google Play and the App Store and turn them into a plan.</p>
+            </div>
           </div>
+
+          <form id="run-form">
+            <div class="section-label">The app</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="app-name">App name</label>
+                <input type="text" id="app-name" class="form-input" placeholder="e.g. Swiggy Food & Grocery" required>
+              </div>
+
+              <div class="form-group">
+                <label>Storefronts</label>
+                <div class="store-toggles">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="store-play" checked> Google Play
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="store-apple" checked> App Store
+                  </label>
+                </div>
+                <span class="form-hint">Region is set to India for this version.</span>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group" id="grp-play-pkg">
+                <label for="play-pkg">Google Play package ID</label>
+                <input type="text" id="play-pkg" class="form-input" placeholder="e.g. in.swiggy.android">
+                <span class="form-hint">The unique Android package identifier</span>
+              </div>
+
+              <div class="form-group" id="grp-apple-id">
+                <label for="apple-id">App Store ID</label>
+                <input type="text" id="apple-id" class="form-input" placeholder="e.g. 989506690">
+                <span class="form-hint">Numeric App Store ID</span>
+              </div>
+            </div>
+
+            <!-- App Store Search Candidates Dropdown (Hidden until triggered) -->
+            <div class="form-group" id="grp-candidates" style="display: none; margin-bottom: 1.25rem;">
+              <label for="select-candidates">Matched App Store candidates</label>
+              <select id="select-candidates" class="form-select">
+                <option value="">Select a matched App Store candidate...</option>
+              </select>
+            </div>
+
+            <!-- Validate Storefronts Button & Result Preview -->
+            <div style="margin-bottom: 1.5rem; display: flex; align-items: center; flex-wrap: wrap; gap: .5rem;">
+              <button type="button" id="btn-validate" class="btn btn-secondary btn-sm">Check these IDs</button>
+              <span id="validate-spinner" style="display: none; font-size: 0.825rem; color: var(--text-muted);">Verifying store metadata...</span>
+            </div>
+
+            <div id="validation-preview" class="validation-preview" style="display: none;">
+              <img id="val-icon" class="preview-icon" src="" alt="App icon">
+              <div class="preview-info">
+                <h3 id="val-title">App title</h3>
+                <p id="val-meta" class="preview-meta">Version: - | Rating: -</p>
+              </div>
+            </div>
+
+            <!-- Filter & Sample Settings -->
+            <div class="section-label" style="margin-top: 0.5rem;">Sampling &amp; filters</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="sample-size">Sample size (50 – 5,000)</label>
+                <input type="number" id="sample-size" class="form-input" value="1000" min="50" max="5000">
+                <span class="form-hint">Target reviews per store</span>
+              </div>
+
+              <div class="form-group">
+                <label>Star ratings</label>
+                <div class="star-row">
+                  <label class="checkbox-label"><input type="checkbox" name="stars" value="1" checked> 1★</label>
+                  <label class="checkbox-label"><input type="checkbox" name="stars" value="2" checked> 2★</label>
+                  <label class="checkbox-label"><input type="checkbox" name="stars" value="3" checked> 3★</label>
+                  <label class="checkbox-label"><input type="checkbox" name="stars" value="4" checked> 4★</label>
+                  <label class="checkbox-label"><input type="checkbox" name="stars" value="5" checked> 5★</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="date-from">Date from (optional)</label>
+                <input type="date" id="date-from" class="form-input">
+              </div>
+
+              <div class="form-group">
+                <label for="date-to">Date to (optional)</label>
+                <input type="date" id="date-to" class="form-input">
+              </div>
+            </div>
+
+            <!-- Advanced Accordion Toggle -->
+            <details class="adv">
+              <summary>Advanced configuration</summary>
+              <div class="form-grid" style="margin-top: 1rem; margin-bottom: 0;">
+                <div class="form-group">
+                  <label for="tax-pct">Taxonomy sample % (1–50)</label>
+                  <input type="number" id="tax-pct" class="form-input" value="10" min="1" max="50" step="1">
+                  <span class="form-hint">Default 10%</span>
+                </div>
+
+                <div class="form-group">
+                  <label for="lang-filter">Language filter</label>
+                  <select id="lang-filter" class="form-select">
+                    <option value="lenient" selected>Lenient (English &amp; Hinglish)</option>
+                    <option value="strict_en">Strict English only</option>
+                    <option value="off">All languages</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="top-k">Proof reviews per category</label>
+                  <input type="number" id="top-k" class="form-input" value="50" min="5" max="200">
+                  <span class="form-hint">Ranked by composite score</span>
+                </div>
+              </div>
+            </details>
+
+            <button type="submit" id="btn-run" class="btn btn-primary btn-lg" style="width: 100%;">
+              Run analysis &rarr;
+            </button>
+          </form>
         </div>
 
-        <form id="run-form">
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="app-name">App Name *</label>
-              <input type="text" id="app-name" class="form-input" placeholder="e.g. Swiggy Food & Grocery" required>
-            </div>
-
-            <div class="form-group">
-              <label>Target Storefronts *</label>
-              <div class="store-toggles">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="store-play" checked> Google Play Store
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="store-apple" checked> Apple App Store
-                </label>
-              </div>
-              <span class="form-hint">Country fixed to India (in) in v1. App Store capped at ~500 reviews.</span>
-            </div>
+        <!-- Side column -->
+        <aside class="aside-stack">
+          <div class="aside-card">
+            <h3>How it <em>works</em></h3>
+            <ol class="how-steps">
+              <li><div><strong>We collect &amp; clean</strong><span>Reviews are fetched, de-duplicated and scrubbed of personal details.</span></div></li>
+              <li><div><strong>We find the themes</strong><span>Complaint categories emerge from your own reviews, not a fixed list.</span></div></li>
+              <li><div><strong>You get a plan</strong><span>Ranked by volume, severity, rating drag and trend, with quotes as proof.</span></div></li>
+            </ol>
+            <svg class="aside-doodle" viewBox="0 0 120 120" aria-hidden="true">
+              <circle cx="70" cy="70" r="46" fill="#f4cf4a" opacity=".9"/>
+              <polygon points="70,34 79,57 104,59 85,75 91,99 70,86 49,99 55,75 36,59 61,57" fill="#e8553a" stroke="#16201a" stroke-width="3" stroke-linejoin="round"/>
+            </svg>
           </div>
 
-          <div class="form-grid">
-            <div class="form-group" id="grp-play-pkg">
-              <label for="play-pkg">Google Play Package ID</label>
-              <input type="text" id="play-pkg" class="form-input" placeholder="e.g. in.swiggy.android">
-              <span class="form-hint">Unique Android package name</span>
-            </div>
-
-            <div class="form-group" id="grp-apple-id">
-              <label for="apple-id">Apple App Store Numeric ID</label>
-              <input type="text" id="apple-id" class="form-input" placeholder="e.g. 989506690">
-              <span class="form-hint">Numeric iTunes track ID</span>
-            </div>
+          <div class="aside-note">
+            <b>Tip</b>
+            Start with 1–3★ only to focus on complaints, or keep every rating to see what people love, too.
           </div>
-
-          <!-- App Store Search Candidates Dropdown (Hidden until triggered) -->
-          <div class="form-group" id="grp-candidates" style="display: none; margin-bottom: 1.25rem;">
-            <label for="select-candidates">Matched App Store Candidates:</label>
-            <select id="select-candidates" class="form-select">
-              <option value="">Select a matched App Store candidate...</option>
-            </select>
-          </div>
-
-          <!-- Validate Storefronts Button & Result Preview -->
-          <div style="margin-bottom: 1.5rem;">
-            <button type="button" id="btn-validate" class="btn btn-secondary btn-sm">🔍 Validate App Identifiers</button>
-            <span id="validate-spinner" style="display: none; margin-left: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">Verifying store metadata...</span>
-          </div>
-
-          <div id="validation-preview" class="validation-preview" style="display: none;">
-            <img id="val-icon" class="preview-icon" src="" alt="App Icon">
-            <div class="preview-info">
-              <h3 id="val-title">App Title</h3>
-              <p id="val-meta" class="preview-meta">Version: - | Rating: - ★</p>
-            </div>
-          </div>
-
-          <!-- Filter & Sample Settings -->
-          <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">Sampling & Review Filters</h3>
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="sample-size">Sample Size (50 - 5000)</label>
-              <input type="number" id="sample-size" class="form-input" value="1000" min="50" max="5000">
-              <span class="form-hint">Target reviews per store (App Store max ~500)</span>
-            </div>
-
-            <div class="form-group">
-              <label>Star Ratings Filter</label>
-              <div style="display: flex; gap: 0.75rem; margin-top: 0.35rem;">
-                <label class="checkbox-label"><input type="checkbox" name="stars" value="1" checked> 1★</label>
-                <label class="checkbox-label"><input type="checkbox" name="stars" value="2" checked> 2★</label>
-                <label class="checkbox-label"><input type="checkbox" name="stars" value="3" checked> 3★</label>
-                <label class="checkbox-label"><input type="checkbox" name="stars" value="4" checked> 4★</label>
-                <label class="checkbox-label"><input type="checkbox" name="stars" value="5" checked> 5★</label>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="date-from">Date From (Optional)</label>
-              <input type="date" id="date-from" class="form-input">
-            </div>
-
-            <div class="form-group">
-              <label for="date-to">Date To (Optional)</label>
-              <input type="date" id="date-to" class="form-input">
-            </div>
-          </div>
-
-          <!-- Advanced Accordion Toggle -->
-          <details style="margin-bottom: 1.5rem; background: var(--bg-surface); padding: 0.75rem 1rem; border-radius: var(--radius-md);">
-            <summary style="font-weight: 600; font-size: 0.9rem; cursor: pointer;">Advanced Configuration (Taxonomy % & Language Filter)</summary>
-            <div class="form-grid" style="margin-top: 1rem;">
-              <div class="form-group">
-                <label for="tax-pct">Taxonomy Sample % (1% - 50%)</label>
-                <input type="number" id="tax-pct" class="form-input" value="10" min="1" max="50" step="1">
-                <span class="form-hint">Default 10% (clamped between 150 and 300)</span>
-              </div>
-
-              <div class="form-group">
-                <label for="lang-filter">Language Filter Mode</label>
-                <select id="lang-filter" class="form-select">
-                  <option value="lenient" selected>Lenient (English & Hinglish kept; non-Latin dropped)</option>
-                  <option value="strict_en">Strict English (90%+ Latin letters only)</option>
-                  <option value="off">Off (Keep all languages)</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label for="top-k">Top Proof Reviews per Category</label>
-                <input type="number" id="top-k" class="form-input" value="50" min="5" max="200">
-                <span class="form-hint">Ranked by D7 composite score</span>
-              </div>
-            </div>
-          </details>
-
-          <button type="submit" id="btn-run" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-size: 1rem;">
-            🚀 Run Intelligence Analysis
-          </button>
-        </form>
+        </aside>
       </div>
     </section>
 
@@ -186,30 +347,41 @@
     <section id="tab-progress" class="tab-pane" style="display: none;">
       <div class="card">
         <div class="card-header">
-          <div>
-            <h2 class="card-title">Analysis in Progress</h2>
-            <p id="progress-subtitle" class="card-subtitle">Run ID: -</p>
+          <div class="progress-head">
+            <div class="progress-art" aria-hidden="true">
+              <svg viewBox="0 0 120 90">
+                <g class="bob" style="--r:-8deg"><rect x="6" y="22" width="44" height="34" rx="7" class="il-card"/><rect x="13" y="32" width="30" height="5" rx="2.5" class="il-line"/><rect x="13" y="42" width="20" height="5" rx="2.5" class="il-line"/></g>
+                <g class="bob b2" style="--r:5deg"><rect x="40" y="8" width="44" height="34" rx="7" class="il-card"/><rect x="47" y="18" width="30" height="5" rx="2.5" class="il-ember"/><rect x="47" y="28" width="20" height="5" rx="2.5" class="il-line"/></g>
+                <g class="bob b3" style="--r:-3deg"><rect x="62" y="44" width="44" height="34" rx="7" class="il-card"/><rect x="69" y="54" width="30" height="5" rx="2.5" class="il-forest"/><rect x="69" y="64" width="20" height="5" rx="2.5" class="il-line"/></g>
+              </svg>
+            </div>
+            <div>
+              <h2 id="progress-title" class="card-title">Reading your reviews&hellip;</h2>
+              <p id="progress-subtitle" class="card-subtitle">Run ID: -</p>
+            </div>
           </div>
-          <button id="btn-cancel-run" class="btn btn-danger btn-sm">Stop / Cancel Run</button>
+          <button id="btn-cancel-run" class="btn btn-danger btn-sm">Cancel run</button>
         </div>
+
+        <div id="progress-status-box" style="display: none; margin: 1rem 0;"></div>
 
         <!-- Stepper -->
         <div class="stepper-container">
           <div class="step-node" id="step-s01_collect">
             <div class="step-circle">1</div>
-            <div class="step-label">Collect Reviews</div>
+            <div class="step-label">Collect</div>
           </div>
           <div class="step-node" id="step-s02_clean">
             <div class="step-circle">2</div>
-            <div class="step-label">Clean & Dedupe</div>
+            <div class="step-label">Clean</div>
           </div>
           <div class="step-node" id="step-s03_sample_taxonomy">
             <div class="step-circle">3</div>
-            <div class="step-label">Taxonomy Sample</div>
+            <div class="step-label">Taxonomy</div>
           </div>
           <div class="step-node" id="step-s04_classify">
             <div class="step-circle">4</div>
-            <div class="step-label">Classify Batches</div>
+            <div class="step-label">Classify</div>
           </div>
           <div class="step-node" id="step-s05_reconcile">
             <div class="step-circle">5</div>
@@ -226,7 +398,7 @@
         </div>
 
         <!-- Terminal log tail -->
-        <h3 style="font-size: 0.95rem; font-weight: 700; margin: 1.25rem 0 0.5rem;">Pipeline Execution Log:</h3>
+        <div class="section-label" style="margin-top: 1.5rem;">Execution log</div>
         <div id="log-terminal" class="log-terminal">Initializing pipeline worker...</div>
       </div>
     </section>
@@ -237,41 +409,43 @@
     <section id="tab-report" class="tab-pane" style="display: none;">
       <!-- Report Header -->
       <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-          <div style="display: flex; align-items: center; gap: 1rem;">
-            <div id="rep-icon-box" class="preview-icon" style="display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; background: var(--primary);">RI</div>
+        <div class="report-head">
+          <div class="report-id">
+            <div id="rep-icon-box" class="preview-icon" style="display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; color: #fff; background: var(--primary);">AR</div>
             <div>
-              <h2 id="rep-app-name" style="font-size: 1.35rem; font-weight: 800;">App Name</h2>
-              <p id="rep-meta" class="card-subtitle">Run Date: - | Status: Completed</p>
+              <h2 id="rep-app-name">App name</h2>
+              <p id="rep-meta" class="card-subtitle">Run date: - | Status: Completed</p>
             </div>
           </div>
-          <div style="display: flex; gap: 0.5rem;">
-            <button id="btn-rerun-fresh" class="btn btn-secondary btn-sm">🔄 Fresh Re-run</button>
-            <button id="btn-rerun-replay" class="btn btn-secondary btn-sm" title="Replay on prior raw snapshot with cached LLM calls">⚡ Replay (Cache)</button>
+          <div class="report-actions">
+            <button id="btn-rerun-fresh" class="btn btn-secondary btn-sm">Fresh re-run</button>
+            <button id="btn-rerun-replay" class="btn btn-secondary btn-sm" title="Replay on prior raw snapshot with cached calls">Replay (cached)</button>
             <div class="dropdown">
-              <button class="btn btn-primary btn-sm">📥 Export Data ▾</button>
+              <button class="btn btn-primary btn-sm">Export data &#9662;</button>
               <div class="dropdown-content">
-                <a href="#" id="exp-clean">Clean Reviews (CSV)</a>
-                <a href="#" id="exp-class">Classifications (CSV)</a>
-                <a href="#" id="exp-unaddressed">Unaddressed Feedback (CSV)</a>
-                <a href="#" id="exp-summary">Executive Summary (JSON)</a>
-                <a href="#" id="exp-aggregates">Aggregates & Metrics (JSON)</a>
-                <a href="#" id="exp-taxonomy">Final Taxonomy (JSON)</a>
-                <a href="#" id="exp-raw">Raw Snapshot (CSV)</a>
+                <div class="dropdown-content-inner">
+                  <a href="#" id="exp-clean">Clean reviews (CSV)</a>
+                  <a href="#" id="exp-class">Classifications (CSV)</a>
+                  <a href="#" id="exp-unaddressed">Unaddressed feedback (CSV)</a>
+                  <a href="#" id="exp-summary">Executive summary (JSON)</a>
+                  <a href="#" id="exp-aggregates">Aggregates &amp; metrics (JSON)</a>
+                  <a href="#" id="exp-taxonomy">Final taxonomy (JSON)</a>
+                  <a href="#" id="exp-raw">Raw snapshot (CSV)</a>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Funnel Metrics -->
-        <div class="funnel-grid" style="margin-top: 1.5rem;">
+        <div class="funnel-grid">
           <div class="funnel-card">
             <div id="fnl-fetched" class="funnel-number">0</div>
-            <div class="funnel-label">Raw Scraped</div>
+            <div class="funnel-label">Collected</div>
           </div>
           <div class="funnel-card">
             <div id="fnl-cleaned" class="funnel-number">0</div>
-            <div class="funnel-label">Cleaned Reviews</div>
+            <div class="funnel-label">After cleaning</div>
           </div>
           <div class="funnel-card">
             <div id="fnl-classified" class="funnel-number">0</div>
@@ -279,19 +453,19 @@
           </div>
           <div class="funnel-card">
             <div id="fnl-categories" class="funnel-number">0</div>
-            <div class="funnel-label">Emergent Categories</div>
+            <div class="funnel-label">Categories</div>
           </div>
           <div class="funnel-card">
             <div id="fnl-cost" class="funnel-number">$0.00</div>
-            <div class="funnel-label">Est. LLM Cost</div>
+            <div class="funnel-label">Analysis cost</div>
           </div>
         </div>
       </div>
 
       <!-- Executive Summary & Prioritized Action Plan -->
       <div class="card">
-        <h2 class="card-title">Executive Summary & Action Plan</h2>
-        <div id="rep-exec-summary" style="font-size: 0.95rem; color: var(--text-secondary); line-height: 1.6; margin: 1rem 0;">
+        <h2 class="card-title">Executive summary</h2>
+        <div id="rep-exec-summary" style="font-size: 1rem; color: var(--text-secondary); line-height: 1.75; margin: 1rem 0;">
           Loading executive summary...
         </div>
 
@@ -299,21 +473,19 @@
 
         <!-- Priority Formula Info Tooltip -->
         <div class="info-tooltip-box">
-          <strong>ℹ️ How to read Priority Score:</strong> Computed deterministically in code via:
-          <code>priority = volume_share * 0.35 + avg_severity_norm * 0.25 + rating_drag * 0.20 + recency_weight * 0.10 + trend_up * 0.10</code>.
-          The LLM receives the sorted rankings and provides action narrative without altering rank order.
+          <div><strong>Reading the priority score:</strong> issues are ranked by a mix of volume, severity, rating impact, recency and trend. Higher means more urgent.</div>
         </div>
 
-        <h3 style="font-size: 1.05rem; font-weight: 700; margin: 1.25rem 0 0.75rem;">Prioritized Action Plan</h3>
+        <div class="section-label" style="margin-top: 1.5rem;">Prioritized action plan</div>
         <div class="table-responsive">
           <table class="data-table" id="table-action-plan">
             <thead>
               <tr>
                 <th style="width: 80px;">Rank</th>
                 <th>Category</th>
-                <th style="width: 120px;">Priority Score</th>
+                <th style="width: 120px;">Score</th>
                 <th style="width: 100px;">Reviews</th>
-                <th>Immediate Action Initiatives</th>
+                <th>Recommended actions</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -324,28 +496,28 @@
       <!-- Analytical Charts Grid -->
       <div class="charts-grid">
         <div class="chart-box">
-          <h3 class="card-title" style="font-size: 1rem;">Star Rating Distribution by Store</h3>
+          <h3 class="card-title" style="font-size: 1.15rem;">Star ratings by store</h3>
           <div class="chart-container">
             <canvas id="chart-ratings"></canvas>
           </div>
         </div>
 
         <div class="chart-box">
-          <h3 class="card-title" style="font-size: 1rem;">Review Volume Over Time (Weekly)</h3>
+          <h3 class="card-title" style="font-size: 1.15rem;">Review volume, weekly</h3>
           <div class="chart-container">
             <canvas id="chart-volume"></canvas>
           </div>
         </div>
 
         <div class="chart-box">
-          <h3 class="card-title" style="font-size: 1rem;">Complaint Share by Category</h3>
+          <h3 class="card-title" style="font-size: 1.15rem;">Complaint share by category</h3>
           <div class="chart-container">
             <canvas id="chart-categories"></canvas>
           </div>
         </div>
 
         <div class="chart-box">
-          <h3 class="card-title" style="font-size: 1rem;">Per-Version Avg Rating & Complaint Rate</h3>
+          <h3 class="card-title" style="font-size: 1.15rem;">Rating &amp; complaints per version</h3>
           <div class="chart-container">
             <canvas id="chart-versions"></canvas>
           </div>
@@ -354,18 +526,18 @@
 
       <!-- Per-Version Performance Table -->
       <div class="card">
-        <h2 class="card-title">Version Performance Progression</h2>
-        <p class="card-subtitle">Ordered semantically across release versions</p>
+        <h2 class="card-title">Version performance</h2>
+        <p class="card-subtitle">How each release landed with users</p>
         <div class="table-responsive" style="margin-top: 1rem;">
           <table class="data-table" id="table-version-metrics">
             <thead>
               <tr>
                 <th>Version</th>
                 <th>Reviews</th>
-                <th>Avg Rating</th>
+                <th>Avg rating</th>
                 <th>Complaint %</th>
-                <th>Top Complaint Drivers</th>
-                <th>Play Dev Reply Rate</th>
+                <th>Top complaint drivers</th>
+                <th>Dev reply rate</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -375,8 +547,8 @@
 
       <!-- Category x Version Heatmap -->
       <div class="card">
-        <h2 class="card-title">Category × Version Complaint Heatmap (%)</h2>
-        <p class="card-subtitle">Percentage share of each version's total complaints</p>
+        <h2 class="card-title">Category &times; version heatmap</h2>
+        <p class="card-subtitle">Each cell is that category's share of the version's complaints</p>
         <div class="table-responsive" style="margin-top: 1rem;">
           <table class="data-table" id="table-heatmap">
             <thead>
@@ -391,8 +563,8 @@
 
       <!-- Issues Cards with Proof Reviews -->
       <div class="card">
-        <h2 class="card-title">Category Deep-Dives & Proof Reviews</h2>
-        <p class="card-subtitle">Synthesized root causes, proof citations, and heuristic version resolution signals</p>
+        <h2 class="card-title">Deep dives &amp; evidence</h2>
+        <p class="card-subtitle">Root causes, with real user quotes for every issue</p>
         <div id="issues-container" style="margin-top: 1.25rem;"></div>
       </div>
 
@@ -400,10 +572,10 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h2 class="card-title">Unaddressed Feedback & Vague Complaints Queue</h2>
-            <p class="card-subtitle">Complaints with no developer reply (Play Store) and null-category clarification targets</p>
+            <h2 class="card-title">Unaddressed feedback</h2>
+            <p class="card-subtitle">Reviews without a developer response, and unclear complaints that need a follow-up</p>
           </div>
-          <button id="btn-export-unaddressed" class="btn btn-secondary btn-sm">📥 Export Queue (CSV)</button>
+          <button id="btn-export-unaddressed" class="btn btn-secondary btn-sm">Export queue (CSV)</button>
         </div>
 
         <div class="table-responsive">
@@ -414,8 +586,8 @@
                 <th>Store</th>
                 <th>Version</th>
                 <th>Reason</th>
-                <th>Thumbs Up</th>
-                <th>Review Text</th>
+                <th>Upvotes</th>
+                <th>Review text</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -431,10 +603,10 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h2 class="card-title">Past Analysis Runs</h2>
-            <p class="card-subtitle">Immutable run records persisted in SQLite</p>
+            <h2 class="card-title">Past runs</h2>
+            <p class="card-subtitle">Every analysis you've run, in one place</p>
           </div>
-          <button id="btn-refresh-history" class="btn btn-secondary btn-sm">🔄 Refresh List</button>
+          <button id="btn-refresh-history" class="btn btn-secondary btn-sm">Refresh</button>
         </div>
 
         <div class="table-responsive">
@@ -442,11 +614,11 @@
             <thead>
               <tr>
                 <th>Run ID</th>
-                <th>App Name</th>
-                <th>Created At</th>
+                <th>App</th>
+                <th>Date</th>
                 <th>Status</th>
                 <th>Reviews</th>
-                <th>Est. Cost</th>
+                <th>Cost</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -456,6 +628,26 @@
       </div>
     </section>
   </div>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-icon"><svg viewBox="0 0 40 40"><use href="#ar-logo"/></svg></div>
+        App Review
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/RoHobie/alan-ai-submission" target="_blank" rel="noopener noreferrer">
+          <svg class="gh-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+        <span class="footer-copy">Built with Alan AI</span>
+      </div>
+    </div>
+    <div class="footer-mark" aria-hidden="true">App Review</div>
+  </footer>
 
   <script src="/dashboard/app.js"></script>
 </body>
