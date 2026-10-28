@@ -26,7 +26,12 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.errors import InvalidConfigError, ReviewIntelError
 from app.core.models import Run, RunStage, RunWarning, utc_now
-from app.core.runner import launch_run_in_background, request_run_cancellation
+from app.core.runner import (
+    PIPELINE_STAGES,
+    init_run_stages,
+    launch_run_in_background,
+    request_run_cancellation,
+)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -149,6 +154,9 @@ def create_run(config: RunConfig, db: Session = Depends(get_db)) -> Dict[str, An
     )
     db.add(new_run)
     db.commit()
+
+    # Pre-populate all stages as 'pending' for immediate UI stepper display
+    init_run_stages(run_id, db)
 
     # Launch pipeline background execution
     launch_run_in_background(run_id=run_id, reuse_snapshot=False)
@@ -280,6 +288,9 @@ def rerun_run(run_id: str, payload: Optional[RerunRequest] = None, db: Session =
     db.add(new_run)
     db.commit()
 
+    # Pre-populate all stages as 'pending' for immediate UI stepper display
+    init_run_stages(new_run_id, db)
+
     launch_run_in_background(run_id=new_run_id, reuse_snapshot=reuse_snapshot)
     return {"run_id": new_run_id, "status": "queued", "reused_snapshot": reuse_snapshot}
 
@@ -298,6 +309,19 @@ def cancel_run(run_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
         return {"run_id": run_id, "status": run.status, "message": f"Run is already {run.status}."}
 
     request_run_cancellation(run_id)
+
+    # If run is still queued and has not started executing, cancel immediately
+    if run.status == "queued":
+        run.status = "cancelled"
+        run.error_code = "RUN_CANCELLED"
+        run.error_message = "Run was cancelled before execution started."
+        run.finished_at = utc_now()
+        for stg in run.stages:
+            if stg.status == "pending":
+                stg.status = "cancelled"
+        db.commit()
+        return {"run_id": run_id, "status": "cancelled", "message": "Queued run cancelled."}
+
     return {"run_id": run_id, "status": "cancelling", "message": "Cancellation signal sent."}
 
 
@@ -315,21 +339,25 @@ def resume_run(run_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
         return {"run_id": run_id, "status": run.status, "message": f"Run is already {run.status}."}
 
     # Find first uncompleted stage
-    stage_names = [
-        "s01_collect",
-        "s02_clean",
-        "s03_sample_taxonomy",
-        "s04_classify",
-        "s05_reconcile",
-        "s06_summarize",
-        "s07_aggregate",
-    ]
-    resume_stage = stage_names[0]
-    for s_name in stage_names:
+    resume_stage = PIPELINE_STAGES[0]
+    for s_name in PIPELINE_STAGES:
         stage = db.query(RunStage).filter(RunStage.run_id == run_id, RunStage.stage_name == s_name).first()
         if not stage or stage.status != "completed":
             resume_stage = s_name
             break
+
+    # Reset uncompleted stages to pending for fresh execution
+    reset_future = False
+    for s_name in PIPELINE_STAGES:
+        if s_name == resume_stage:
+            reset_future = True
+        if reset_future:
+            stg = db.query(RunStage).filter(RunStage.run_id == run_id, RunStage.stage_name == s_name).first()
+            if stg:
+                stg.status = "pending"
+                stg.started_at = None
+                stg.finished_at = None
+                stg.error_message = None
 
     run.status = "queued"
     run.error_code = None

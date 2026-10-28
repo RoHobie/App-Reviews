@@ -47,7 +47,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const valMeta = document.getElementById("val-meta");
 
   // Progress Elements
+  const progressTitle = document.getElementById("progress-title");
   const progressSubtitle = document.getElementById("progress-subtitle");
+  const progressStatusBox = document.getElementById("progress-status-box");
   const logTerminal = document.getElementById("log-terminal");
   const btnCancelRun = document.getElementById("btn-cancel-run");
 
@@ -202,7 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (metaFound) {
         valIcon.src = metaFound.icon || "";
         valTitle.textContent = metaFound.name || appNameInput.value;
-        valMeta.textContent = `Version: ${metaFound.current_version || "N/A"} | Rating: ${metaFound.rating ? metaFound.rating.toFixed(1) : "N/A"} ★ (${metaFound.ratings_count || 0} reviews)`;
+        valMeta.textContent = `Version: ${metaFound.current_version || "N/A"} | Rating: ${metaFound.rating ? metaFound.rating.toFixed(1) : "N/A"} (${metaFound.ratings_count || 0} reviews)`;
         valPreview.style.display = "flex";
 
         if (!appNameInput.value.trim() && metaFound.name) {
@@ -302,12 +304,31 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------------------------
   // Progress Polling & Stepper
   // -------------------------------------------------------------------
+  const STAGE_META = {
+    s01_collect: { num: 1, label: "Collect", title: "Stage 1 of 7: Collecting reviews from app stores" },
+    s02_clean: { num: 2, label: "Clean", title: "Stage 2 of 7: Cleaning, deduplicating & language filtering" },
+    s03_sample_taxonomy: { num: 3, label: "Taxonomy", title: "Stage 3 of 7: Discovering complaint taxonomy with Gemini" },
+    s04_classify: { num: 4, label: "Classify", title: "Stage 4 of 7: Classifying reviews against taxonomy" },
+    s05_reconcile: { num: 5, label: "Reconcile", title: "Stage 5 of 7: Reconciling proposed categories & expanding taxonomy" },
+    s06_summarize: { num: 6, label: "Summarize", title: "Stage 6 of 7: Summarizing issues & ranking proof reviews" },
+    s07_aggregate: { num: 7, label: "Aggregate", title: "Stage 7 of 7: Computing aggregates & prioritized action plan" },
+  };
+
   function startProgressPolling(runId) {
     if (pollingInterval) clearInterval(pollingInterval);
-    progressSubtitle.textContent = `Run ID: ${runId}`;
+    currentRunId = runId;
+    if (progressTitle) progressTitle.textContent = "Connecting to pipeline worker...";
+    if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-neutral">Connecting...</span>`;
+    if (progressStatusBox) {
+      progressStatusBox.style.display = "none";
+      progressStatusBox.innerHTML = "";
+    }
+    btnCancelRun.style.display = "inline-block";
+    btnCancelRun.disabled = false;
+    btnCancelRun.textContent = "Cancel run";
     resetStepper();
 
-    pollingInterval = setInterval(async () => {
+    const pollFn = async () => {
       try {
         const resp = await fetch(`/runs/${runId}`);
         if (!resp.ok) return;
@@ -325,20 +346,101 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         }
 
-        // Completion check
+        // Determine active or failed stage
+        const activeStage = (runData.stages || []).find(s => s.status === "running");
+        const failedStage = (runData.stages || []).find(s => s.status === "failed");
+
+        // Dynamic Header and Subtitle Mapping
+        if (runData.status === "queued") {
+          if (progressTitle) progressTitle.textContent = "Waiting in queue for pipeline worker...";
+          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-neutral">Queued</span>`;
+        } else if (runData.status === "running") {
+          if (activeStage && STAGE_META[activeStage.stage_name]) {
+            const meta = STAGE_META[activeStage.stage_name];
+            if (progressTitle) progressTitle.textContent = `${meta.title}...`;
+            if (progressSubtitle) {
+              const durText = activeStage.started_at ? ` (running for ${Math.max(1, Math.round((Date.now() - new Date(activeStage.started_at).getTime()) / 1000))}s)` : "";
+              progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-info">Running</span> &bull; <strong>${meta.label}</strong>${durText}`;
+            }
+          } else {
+            if (progressTitle) progressTitle.textContent = "Pipeline executing stages...";
+            if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-info">Running</span>`;
+          }
+        }
+
+        // Terminal state checks
         if (runData.status === "completed") {
           clearInterval(pollingInterval);
+          pollingInterval = null;
+          btnCancelRun.style.display = "none";
+          if (progressTitle) progressTitle.textContent = "Analysis completed successfully!";
+          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-success">Completed</span>`;
+          (runData.stages || []).forEach(stg => {
+            const el = document.getElementById(`step-${stg.stage_name}`);
+            if (el) el.className = "step-node completed";
+          });
           tabBtnReport.style.display = "block";
           loadReport(runId);
-          switchTab("tab-report");
-        } else if (runData.status === "failed" || runData.status === "cancelled") {
+          setTimeout(() => switchTab("tab-report"), 900);
+        } else if (runData.status === "failed") {
           clearInterval(pollingInterval);
-          alert(`Run ended with status: ${runData.status}\n${runData.error?.message || ""}`);
+          pollingInterval = null;
+          btnCancelRun.style.display = "none";
+          const failMsg = runData.error?.message || "An error occurred during pipeline execution.";
+          const failCode = runData.error?.code || "FAILED";
+          if (progressTitle) progressTitle.textContent = "Analysis failed";
+          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-danger">Failed (${failCode})</span>`;
+          if (progressStatusBox) {
+            progressStatusBox.className = "status-alert status-alert-danger";
+            progressStatusBox.style.display = "flex";
+            progressStatusBox.innerHTML = `
+              <div>
+                <strong>Pipeline Error [${failCode}]:</strong> ${failMsg}
+                ${failedStage ? `<div style="font-size:0.82rem; margin-top:0.3rem;">Failed at stage: <code>${failedStage.stage_name}</code></div>` : ""}
+              </div>
+              <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-secondary btn-sm" onclick="window.resumeRun('${runId}')">Resume from checkpoint</button>
+                <button class="btn btn-primary btn-sm" onclick="window.rerunRun('${runId}')">Retry run</button>
+              </div>
+            `;
+          }
+        } else if (runData.status === "cancelled") {
+          clearInterval(pollingInterval);
+          pollingInterval = null;
+          btnCancelRun.style.display = "none";
+          if (progressTitle) progressTitle.textContent = "Analysis cancelled";
+          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-warning">Cancelled</span>`;
+          if (progressStatusBox) {
+            progressStatusBox.className = "status-alert status-alert-warning";
+            progressStatusBox.style.display = "flex";
+            progressStatusBox.innerHTML = `
+              <div>Run <code>${runId}</code> was cancelled by user request.</div>
+              <button class="btn btn-secondary btn-sm" onclick="window.rerunRun('${runId}')">Restart Run</button>
+            `;
+          }
+        } else if (runData.status === "interrupted") {
+          clearInterval(pollingInterval);
+          pollingInterval = null;
+          btnCancelRun.style.display = "none";
+          if (progressTitle) progressTitle.textContent = "Analysis interrupted";
+          if (progressSubtitle) progressSubtitle.innerHTML = `Run ID: <code>${runId}</code> &bull; <span class="badge badge-neutral">Interrupted</span>`;
+          if (progressStatusBox) {
+            progressStatusBox.className = "status-alert status-alert-info";
+            progressStatusBox.style.display = "flex";
+            progressStatusBox.innerHTML = `
+              <div>The application process or container restarted while this analysis was running. You can resume from the last saved stage checkpoint.</div>
+              <button class="btn btn-primary btn-sm" onclick="window.resumeRun('${runId}')">Resume Run</button>
+            `;
+          }
         }
       } catch (err) {
         console.error("Polling error:", err);
       }
-    }, 2000);
+    };
+
+    // Immediate initial poll followed by 2000ms periodic interval
+    pollFn();
+    pollingInterval = setInterval(pollFn, 2000);
   }
 
   function resetStepper() {
@@ -355,7 +457,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateStepper(stages) {
-    if (!stages) return;
+    if (!stages || !Array.isArray(stages)) return;
+
     stages.forEach(stg => {
       const el = document.getElementById(`step-${stg.stage_name}`);
       if (el) {
@@ -368,9 +471,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!currentRunId) return;
     if (!confirm("Are you sure you want to stop this run?")) return;
     try {
+      btnCancelRun.disabled = true;
+      btnCancelRun.textContent = "Cancelling...";
+      if (progressSubtitle) {
+        progressSubtitle.innerHTML += ` &bull; <span class="badge badge-warning">Cancelling...</span>`;
+      }
       await fetch(`/runs/${currentRunId}/cancel`, { method: "POST" });
     } catch (err) {
       alert("Error requesting cancellation: " + err.message);
+      btnCancelRun.disabled = false;
+      btnCancelRun.textContent = "Cancel run";
     }
   });
 
@@ -402,7 +512,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Warnings Banner
     if (run.warnings && run.warnings.length > 0) {
       const msgs = run.warnings.map(w => `[${w.code}] ${w.message}`).join(" | ");
-      runWarningText.textContent = `⚠️ Notices: ${msgs}`;
+      runWarningText.textContent = `Notices: ${msgs}`;
       runWarningBanner.style.display = "flex";
     } else {
       runWarningBanner.style.display = "none";
@@ -455,7 +565,6 @@ document.addEventListener("DOMContentLoaded", () => {
         <td style="font-weight: 800; font-size: 1.1rem; color: var(--primary);">#${item.priority_rank}</td>
         <td>
           <strong>${item.category_name}</strong>
-          <div style="font-size: 0.775rem; color: var(--text-muted); font-family: monospace;">ID: ${item.category_id}</div>
         </td>
         <td><span class="badge badge-info" style="font-size: 0.85rem;">${item.priority_score.toFixed(4)}</span></td>
         <td><strong>${item.review_count}</strong></td>
@@ -474,7 +583,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.innerHTML = `
         <td><strong>${v.version}</strong></td>
         <td>${v.review_count}</td>
-        <td>${v.avg_rating.toFixed(2)} ★</td>
+        <td>${v.avg_rating.toFixed(2)}</td>
         <td><span class="badge ${v.pct_complaints > 50 ? 'badge-danger' : 'badge-neutral'}">${v.pct_complaints}%</span></td>
         <td>${(v.top_categories || []).join(", ") || "None"}</td>
         <td>${v.dev_reply_rate_play !== null ? `${v.dev_reply_rate_play}%` : '<span style="color: var(--text-muted)">N/A (iOS)</span>'}</td>
@@ -493,11 +602,11 @@ document.addEventListener("DOMContentLoaded", () => {
     (data.unaddressed_feedback || []).slice(0, 50).forEach(u => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><span class="badge ${u.rating <= 2 ? 'badge-danger' : 'badge-neutral'}">${u.rating}★</span></td>
+        <td><span class="badge ${u.rating <= 2 ? 'badge-danger' : 'badge-neutral'}">${u.rating}/5</span></td>
         <td><span class="badge badge-neutral">${u.store}</span></td>
         <td>${u.version}</td>
         <td><span class="badge badge-warning" style="font-size: 0.75rem;">${u.reason}</span></td>
-        <td>👍 ${u.thumbs_up}</td>
+        <td>${u.thumbs_up}</td>
         <td style="max-width: 450px; font-size: 0.85rem;">${u.content}</td>
       `;
       tableUnaddressedBody.appendChild(tr);
@@ -559,7 +668,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const ratingsCtx = document.getElementById("chart-ratings")?.getContext("2d");
     if (ratingsCtx && chartsData.rating_distribution) {
       const rDist = chartsData.rating_distribution;
-      const labels = ["1★", "2★", "3★", "4★", "5★"];
+      const labels = ["1", "2", "3", "4", "5"];
       const playData = labels.map((_, i) => rDist.playstore?.[String(i + 1)] || 0);
       const appleData = labels.map((_, i) => rDist.appstore?.[String(i + 1)] || 0);
 
@@ -642,7 +751,7 @@ document.addEventListener("DOMContentLoaded", () => {
           labels: vt.map(v => v.version),
           datasets: [
             {
-              label: "Avg Rating ★",
+              label: "Avg Rating",
               data: vt.map(v => v.avg_rating),
               borderColor: "#10b981",
               yAxisID: "yRating",
@@ -798,8 +907,8 @@ document.addEventListener("DOMContentLoaded", () => {
       target.innerHTML = res.reviews.map(r => `
         <div class="proof-review-box">
           <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.8rem; color: var(--text-muted);">
-            <span><strong>${r.rating}★</strong> | ${r.store} (${r.version})</span>
-            <span>Relevance: ${r.relevance}/5 | Severity: ${r.severity}/5 | 👍 ${r.thumbs_up}</span>
+            <span><strong>${r.rating}/5</strong> | ${r.store} (${r.version})</span>
+            <span>Relevance: ${r.relevance}/5 | Severity: ${r.severity}/5 | Upvotes: ${r.thumbs_up}</span>
           </div>
           <p style="color: var(--text-primary); font-size: 0.875rem;">${r.content}</p>
           ${r.note ? `<div style="font-size: 0.8rem; color: var(--primary); margin-top: 0.25rem;">Note: ${r.note}</div>` : ''}
@@ -860,6 +969,44 @@ document.addEventListener("DOMContentLoaded", () => {
       tabBtnProgress.style.display = "block";
       switchTab("tab-progress");
       startProgressPolling(runId);
+    }
+  };
+
+  window.resumeRun = async function(runId) {
+    try {
+      const resp = await fetch(`/runs/${runId}/resume`, { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert(data.error?.message || "Failed to resume run.");
+        return;
+      }
+      currentRunId = runId;
+      tabBtnProgress.style.display = "block";
+      switchTab("tab-progress");
+      startProgressPolling(runId);
+    } catch (err) {
+      alert("Error resuming run: " + err.message);
+    }
+  };
+
+  window.rerunRun = async function(runId) {
+    try {
+      const resp = await fetch(`/runs/${runId}/rerun`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reuse_snapshot: false }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert(data.error?.message || "Failed to restart run.");
+        return;
+      }
+      currentRunId = data.run_id;
+      tabBtnProgress.style.display = "block";
+      switchTab("tab-progress");
+      startProgressPolling(currentRunId);
+    } catch (err) {
+      alert("Error restarting run: " + err.message);
     }
   };
 });

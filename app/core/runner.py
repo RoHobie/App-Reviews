@@ -72,9 +72,31 @@ def clear_run_cancellation(run_id: str) -> None:
     _cancel_requested.pop(run_id, None)
 
 
+# Canonical sequential pipeline stages
+PIPELINE_STAGES = [
+    "s01_collect",
+    "s02_clean",
+    "s03_sample_taxonomy",
+    "s04_classify",
+    "s05_reconcile",
+    "s06_summarize",
+    "s07_aggregate",
+]
+
+
+def init_run_stages(run_id: str, db: Any) -> None:
+    """Pre-populates all 7 sequential pipeline stages as 'pending' for immediate UI stepper display."""
+    existing = {s.stage_name for s in db.query(RunStage).filter(RunStage.run_id == run_id).all()}
+    for s_name in PIPELINE_STAGES:
+        if s_name not in existing:
+            db.add(RunStage(run_id=run_id, stage_name=s_name, status="pending"))
+    db.commit()
+
+
 def recover_interrupted_runs() -> int:
     """
     On system startup, marks any runs left in 'running' state as 'interrupted'.
+    Also marks any active 'running' stage as 'interrupted'.
     This prevents permanently stuck states when containers or processes restart.
     Returns the count of recovered runs.
     """
@@ -85,6 +107,9 @@ def recover_interrupted_runs() -> int:
             r.status = "interrupted"
             r.error_code = "INTERRUPTED"
             r.error_message = "Container or application process restarted while run was active. Run can be resumed."
+            for stg in r.stages:
+                if stg.status == "running":
+                    stg.status = "interrupted"
             count += 1
         if count > 0:
             db.commit()
@@ -99,16 +124,7 @@ def execute_pipeline(run_id: str, reuse_snapshot: bool = False, resume_from_stag
     clear_run_cancellation(run_id)
     logger.info("Starting pipeline execution for run_id=%s (reuse_snapshot=%s, resume=%s)", run_id, reuse_snapshot, resume_from_stage)
 
-    # List of sequential pipeline stages
-    stage_names = [
-        "s01_collect",
-        "s02_clean",
-        "s03_sample_taxonomy",
-        "s04_classify",
-        "s05_reconcile",
-        "s06_summarize",
-        "s07_aggregate",
-    ]
+    stage_names = PIPELINE_STAGES
 
     with get_db_context() as db:
         run = db.query(Run).filter(Run.id == run_id).first()
@@ -120,17 +136,8 @@ def execute_pipeline(run_id: str, reuse_snapshot: bool = False, resume_from_stag
         run.started_at = utc_now()
         db.commit()
 
-        # Initialize stage rows if not already present
-        existing_stages = {s.stage_name: s for s in run.stages}
-        for s_name in stage_names:
-            if s_name not in existing_stages:
-                stage_row = RunStage(
-                    run_id=run_id,
-                    stage_name=s_name,
-                    status="pending",
-                )
-                db.add(stage_row)
-        db.commit()
+        # Pre-populate all stages as pending if not already present
+        init_run_stages(run_id, db)
 
     run_dir = settings.get_run_dir(run_id)
 
@@ -177,6 +184,10 @@ def execute_pipeline(run_id: str, reuse_snapshot: bool = False, resume_from_stag
                 run.error_code = "RUN_CANCELLED"
                 run.error_message = "Run was cancelled by user request."
                 run.finished_at = utc_now()
+                for stg in run.stages:
+                    if stg.status == "running":
+                        stg.status = "cancelled"
+                        stg.finished_at = utc_now()
                 db.commit()
     except ReviewIntelError as rie:
         logger.error("Pipeline failed with domain error on run_id=%s: %s", run_id, rie.message)
@@ -187,6 +198,17 @@ def execute_pipeline(run_id: str, reuse_snapshot: bool = False, resume_from_stag
     finally:
         set_active_run_id(None)
         clear_run_cancellation(run_id)
+
+
+def _dispatch_stage(stage_name: str, run_id: str, reuse_snapshot: bool) -> Dict[str, Any]:
+    """Dispatches execution to the corresponding stage implementation."""
+    if stage_name not in PIPELINE_STAGES:
+        raise ValueError(f"Unknown stage name: {stage_name}")
+    import importlib
+    mod = importlib.import_module(f"app.pipeline.{stage_name}")
+    if stage_name == "s01_collect":
+        return mod.run_stage(run_id, reuse_snapshot=reuse_snapshot)
+    return mod.run_stage(run_id)
 
 
 def _run_stage(run_id: str, stage_name: str, reuse_snapshot: bool) -> None:
@@ -206,30 +228,7 @@ def _run_stage(run_id: str, stage_name: str, reuse_snapshot: bool) -> None:
         stage_summary: Dict[str, Any] = {}
 
         try:
-            # Dynamically dispatch to the pipeline stage function
-            if stage_name == "s01_collect":
-                from app.pipeline.s01_collect import run_stage as run_s01
-                stage_summary = run_s01(run_id, reuse_snapshot=reuse_snapshot)
-            elif stage_name == "s02_clean":
-                from app.pipeline.s02_clean import run_stage as run_s02
-                stage_summary = run_s02(run_id)
-            elif stage_name == "s03_sample_taxonomy":
-                from app.pipeline.s03_sample_taxonomy import run_stage as run_s03
-                stage_summary = run_s03(run_id)
-            elif stage_name == "s04_classify":
-                from app.pipeline.s04_classify import run_stage as run_s04
-                stage_summary = run_s04(run_id)
-            elif stage_name == "s05_reconcile":
-                from app.pipeline.s05_reconcile import run_stage as run_s05
-                stage_summary = run_s05(run_id)
-            elif stage_name == "s06_summarize":
-                from app.pipeline.s06_summarize import run_stage as run_s06
-                stage_summary = run_s06(run_id)
-            elif stage_name == "s07_aggregate":
-                from app.pipeline.s07_aggregate import run_stage as run_s07
-                stage_summary = run_s07(run_id)
-            else:
-                raise ValueError(f"Unknown stage name: {stage_name}")
+            stage_summary = _dispatch_stage(stage_name, run_id, reuse_snapshot)
 
             finish_time = utc_now()
             duration = (finish_time - start_time).total_seconds()
@@ -244,6 +243,20 @@ def _run_stage(run_id: str, stage_name: str, reuse_snapshot: bool) -> None:
                     stage.output_summary = json.dumps(stage_summary)
                     db.commit()
 
+        except RunCancelledError:
+            finish_time = utc_now()
+            duration = (finish_time - start_time).total_seconds()
+            stage_logger.warning("Stage %s cancelled by user request.", stage_name)
+
+            with get_db_context() as db:
+                stage = db.query(RunStage).filter(RunStage.run_id == run_id, RunStage.stage_name == stage_name).first()
+                if stage:
+                    stage.status = "cancelled"
+                    stage.finished_at = finish_time
+                    stage.duration_seconds = duration
+                    stage.error_message = "Stage cancelled by user request."
+                    db.commit()
+            raise
         except Exception as exc:
             finish_time = utc_now()
             duration = (finish_time - start_time).total_seconds()
