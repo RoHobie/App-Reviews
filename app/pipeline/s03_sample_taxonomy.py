@@ -18,6 +18,8 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import random
+import time
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -160,15 +162,47 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         f"{formatted_reviews_block}"
     )
 
-    # Invoke LLM
+    model_name = settings.llm_model
+    logger.info("Starting taxonomy discovery on %d sampled reviews using %s...", len(sampled_df), model_name)
+
     llm = get_llm_client()
-    taxonomy_output, usage = llm.generate_structured(
-        prompt=rendered_prompt,
-        schema=TaxonomyOutput,
-        temperature=0.0,
-        run_id=run_id,
-        prompt_version="taxonomy_v1",
-    )
+    max_503_retries = 4
+    taxonomy_output = None
+    usage = {}
+
+    for attempt in range(max_503_retries):
+        try:
+            taxonomy_output, usage = llm.generate_structured(
+                prompt=rendered_prompt,
+                schema=TaxonomyOutput,
+                temperature=0.0,
+                model_override=model_name,
+                run_id=run_id,
+                prompt_version="taxonomy_v1",
+            )
+            break
+        except Exception as exc:
+            err_str = str(exc).lower()
+            # Detect 503 Service Unavailable, transient upstream downtime, or server overload
+            is_503 = (
+                "503" in err_str
+                or "unavailable" in err_str
+                or "service unavailable" in err_str
+                or "overloaded" in err_str
+                or "server error" in err_str
+                or "connection reset" in err_str
+            )
+            if is_503 and attempt < max_503_retries - 1:
+                delay = (2 ** attempt) * 2.5 + random.uniform(1.0, 3.0)
+                logger.warning(
+                    "Taxonomy discovery encountered 503 / Service Unavailable (attempt %d/%d). Sleeping %.2fs before retrying... (%s)",
+                    attempt + 1, max_503_retries, delay, exc
+                )
+                time.sleep(delay)
+            else:
+                raise
+
+    logger.info("Successfully discovered %d complaint categories", len(taxonomy_output.categories))
 
     # Assign clean stable category IDs in code (e.g. c01, c02, ...)
     clean_categories: List[Dict[str, Any]] = []
@@ -182,13 +216,20 @@ def run_stage(run_id: str) -> Dict[str, Any]:
             "exclude_hint": cat.exclude_hint,
         })
 
+    sample_review_types_dict: Dict[str, str] = {}
+    if isinstance(taxonomy_output.sample_review_types, list):
+        for item in taxonomy_output.sample_review_types:
+            sample_review_types_dict[item.review_id] = item.type
+    elif isinstance(taxonomy_output.sample_review_types, dict):
+        sample_review_types_dict = dict(taxonomy_output.sample_review_types)
+
     taxonomy_payload = {
         "categories": clean_categories,
         "null_category": {
             "id": "null",
             "definition": "Complaint with no actionable detail",
         },
-        "sample_review_types": taxonomy_output.sample_review_types,
+        "sample_review_types": sample_review_types_dict,
         "sample_size": len(sampled_df),
         "random_seed": seed,
     }
@@ -197,7 +238,7 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         json.dump(taxonomy_payload, f, indent=2)
 
     # Update token usage and cost in database
-    cost = settings.calculate_cost(settings.llm_model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+    cost = settings.calculate_cost(model_name, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
     with get_db_context() as db:
         run = db.query(Run).filter(Run.id == run_id).first()
         if run:

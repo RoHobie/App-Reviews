@@ -145,3 +145,80 @@ class TestReproducibilityChecklist:
 
         # Assert original run was never mutated or modified
         assert (run_dir_1 / "classifications.csv").read_text(encoding="utf-8") == class_content_1
+
+    def test_taxonomy_503_retry_with_delay(self, monkeypatch, tmp_path):
+        """Verify that HTTP 503 / Service Unavailable in s03_sample_taxonomy triggers retry and delay."""
+        test_data_dir = tmp_path / "test_503_data"
+        test_data_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(settings, "data_dir", str(test_data_dir))
+        monkeypatch.setattr(settings, "llm_provider", "fake")
+        init_db()
+
+        run_id = "run_503_test"
+        run_dir = settings.get_run_dir(run_id)
+
+        # Create Run in DB
+        with get_db_context() as db:
+            db.query(Run).filter(Run.id == run_id).delete()
+            db.commit()
+            r = Run(
+                id=run_id,
+                app_name="503 App",
+                status="queued",
+                config=json.dumps({"app_name": "503 App", "stores": ["playstore"]}),
+            )
+            db.add(r)
+            db.commit()
+
+        # Write config.json
+        with open(run_dir / "config.json", "w", encoding="utf-8") as f:
+            json.dump({
+                "run_id": run_id,
+                "config": {
+                    "app_name": "503 App",
+                    "stores": ["playstore"],
+                    "country": "in",
+                    "sample_size": 50,
+                    "taxonomy_sample_pct": 0.5,
+                    "taxonomy_sample_min": 10,
+                    "taxonomy_sample_max": 20,
+                    "language_filter": "lenient",
+                },
+            }, f, indent=2)
+
+        # Write raw reviews and run clean
+        raw_reviews = generate_synthetic_raw_reviews(30)
+        with open(run_dir / "raw_reviews.csv", "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(raw_reviews[0].keys()))
+            writer.writeheader()
+            for row in raw_reviews:
+                writer.writerow(row)
+        s02_clean.run_stage(run_id)
+
+        # Mock LLM to fail once with 503 Service Unavailable, then succeed on retry
+        from app.llm.fake import FakeLLMClient
+        real_client = FakeLLMClient()
+        orig_gen = real_client.generate_structured
+        call_count = 0
+        sleep_durations = []
+
+        def failing_generate_structured(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("HTTP 503: Service Unavailable upstream overloaded")
+            return orig_gen(*args, **kwargs)
+
+        monkeypatch.setattr(real_client, "generate_structured", failing_generate_structured)
+        from app.pipeline import s03_sample_taxonomy
+        monkeypatch.setattr(s03_sample_taxonomy, "get_llm_client", lambda: real_client)
+
+        orig_sleep = s03_sample_taxonomy.time.sleep
+        monkeypatch.setattr(s03_sample_taxonomy.time, "sleep", lambda s: sleep_durations.append(s))
+
+        res = s03_sample_taxonomy.run_stage(run_id)
+        assert res["categories_count"] > 0
+        assert call_count == 2
+        assert len(sleep_durations) == 1
+        assert sleep_durations[0] > 0
+

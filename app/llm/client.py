@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional, Tuple, Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
-from app.core.errors import LLMInvalidOutputError
+from app.core.errors import LLMInvalidOutputError, LLMUnavailableError
 
 logger = logging.getLogger("review_intel.llm.client")
 
@@ -130,6 +130,9 @@ class LLMClient(ABC):
                     f"{ve.json()}\n"
                     f"Please correct the JSON output to strictly match the schema."
                 )
+            except LLMUnavailableError:
+                # Rate limit / quota exhausted after provider backoff retries - terminate immediately
+                raise
             except Exception as call_err:
                 last_error = call_err
                 logger.warning("LLM provider call error (attempt %d/%d): %s", attempt + 1, max_retries, call_err)
@@ -142,9 +145,9 @@ class LLMClient(ABC):
         )
 
 
-def get_llm_client() -> LLMClient:
-    """Factory creating the active LLM client based on configuration."""
-    provider = settings.llm_provider.lower().strip()
+def get_llm_client(provider_override: Optional[str] = None) -> LLMClient:
+    """Factory creating the active LLM client based on configuration or explicit override."""
+    provider = (provider_override or settings.llm_provider).lower().strip()
     if provider == "fake":
         from app.llm.fake import FakeLLMClient
         return FakeLLMClient()
@@ -152,4 +155,4 @@ def get_llm_client() -> LLMClient:
         from app.llm.gemini import GeminiClient
         return GeminiClient()
     else:
-        raise ValueError(f"Unsupported LLM provider: {provider}")
+        raise ValueError(f"Unsupported LLM provider: {provider}. Google Gemini is the exclusive provider.")

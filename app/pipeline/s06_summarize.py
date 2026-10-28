@@ -19,6 +19,7 @@ import json
 import logging
 import math
 from pathlib import Path
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from dateutil import parser as date_parser
@@ -292,6 +293,10 @@ def run_stage(run_id: str) -> Dict[str, Any]:
             "priority_score": cat_item["priority_score"],
             "priority_rank": cat_item["priority_rank"],
         }
+
+        # Polite delay to prevent hammering the Gemini API
+        if settings.llm_batch_delay_seconds > 0:
+            time.sleep(settings.llm_batch_delay_seconds)
 
     # 2. Executive Synthesis across prioritized categories
     overall_avg_rating = pd.to_numeric(df_clean["rating"], errors="coerce").fillna(3).mean()

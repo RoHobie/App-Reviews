@@ -47,13 +47,19 @@ class NullCategory(BaseModel):
     definition: str = "Complaints lacking actionable detail (e.g. 'worst app', 'does not work')."
 
 
+class SampleReviewTypeItem(BaseModel):
+    """Mapping item of review_id to gate review type."""
+    review_id: str = Field(..., description="The review ID")
+    type: ReviewType = Field(..., description="The gate classification type")
+
+
 class TaxonomyOutput(BaseModel):
     """Output schema for initial taxonomy discovery."""
     categories: List[CategoryDefinition] = Field(..., min_length=3, max_length=20)
     null_category: NullCategory = Field(default_factory=NullCategory)
-    sample_review_types: Dict[str, ReviewType] = Field(
-        default_factory=dict,
-        description="Mapping of review_id to review type for the stratified taxonomy sample"
+    sample_review_types: List[SampleReviewTypeItem] = Field(
+        default_factory=list,
+        description="List of sample review IDs and their classified types"
     )
 
 

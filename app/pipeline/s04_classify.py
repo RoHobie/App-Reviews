@@ -20,6 +20,7 @@ import csv
 import json
 import logging
 from pathlib import Path
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -316,6 +317,17 @@ def run_stage(run_id: str) -> Dict[str, Any]:
         checkpoint_path = batches_dir / f"batch_{b_idx:04d}.json"
         with open(checkpoint_path, "w", encoding="utf-8") as cpf:
             json.dump({"batch_idx": b_idx, "rows": rows, "usage": usage}, cpf, indent=2)
+
+        classified_so_far = sum(len(batch_rows) for batch_rows in completed_batch_results.values())
+        logger.info(
+            "Classified batch %d/%d (%d/%d reviews processed, %.1f%%)",
+            b_idx + 1, len(batches), min(classified_so_far, total_reviews), total_reviews,
+            ((b_idx + 1) / len(batches)) * 100
+        )
+
+        # Rate limiting delay between batches (if more batches remain)
+        if b_idx < len(batches) - 1 and settings.llm_batch_delay_seconds > 0:
+            time.sleep(settings.llm_batch_delay_seconds)
 
     # Check for cancellation before writing final CSV
     if is_run_cancelled(run_id):

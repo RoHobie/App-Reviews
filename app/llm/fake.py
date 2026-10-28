@@ -27,6 +27,7 @@ from app.llm.schemas import (
     ProposedCategory,
     ReconciliationOutput,
     ReviewClassification,
+    SampleReviewTypeItem,
     TaxonomyOutput,
 )
 
@@ -89,9 +90,10 @@ class FakeLLMClient(LLMClient):
             ]
             # Parse review IDs from prompt to populate sample types
             review_ids = re.findall(r"review_id:\s*([^\s,]+)", prompt)
-            sample_types = {}
-            for r_id in review_ids:
-                sample_types[r_id] = "complaint"
+            sample_types = [
+                SampleReviewTypeItem(review_id=r_id, type="complaint")
+                for r_id in review_ids
+            ]
 
             out = TaxonomyOutput(
                 categories=categories,

@@ -32,18 +32,21 @@ def run_logger_context(run_id: str, stage_name: str) -> Generator[logging.Logger
     logs_dir = settings.get_run_logs_dir(run_id)
     log_file = logs_dir / "pipeline.log"
 
-    logger = logging.getLogger(f"run.{run_id}.{stage_name}")
-    logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+    stage_logger = logging.getLogger(f"run.{run_id}.{stage_name}")
+    stage_logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+    app_logger = logging.getLogger("review_intel")
 
     # File handler for this specific run
     file_handler = logging.FileHandler(str(log_file), mode="a", encoding="utf-8")
     formatter = logging.Formatter(LOG_FORMAT)
     file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    stage_logger.addHandler(file_handler)
+    app_logger.addHandler(file_handler)
 
     try:
-        yield logger
+        yield stage_logger
     finally:
         file_handler.flush()
-        logger.removeHandler(file_handler)
+        stage_logger.removeHandler(file_handler)
+        app_logger.removeHandler(file_handler)
         file_handler.close()

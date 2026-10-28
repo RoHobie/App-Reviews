@@ -24,6 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.core.config import settings
+
 # Configure standard logging format
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -110,16 +112,16 @@ def health_check() -> Dict[str, Any]:
         Note: If GEMINI_API_KEY is not set, the app still reports status='ok'
         with llm_configured=false so the UI dashboard can display a setup warning banner.
     """
-    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-    llm_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
-    llm_configured = bool(gemini_key) or llm_provider == "fake"
+    gemini_keys = settings.get_gemini_api_keys()
+    llm_provider = settings.llm_provider.lower()
+    llm_configured = bool(gemini_keys) or llm_provider == "fake"
 
     return {
         "status": "ok",
         "llm_configured": llm_configured,
         "provider": llm_provider,
         "version": "0.1.0",
-        "git_sha": os.getenv("GIT_SHA", "unknown"),
+        "git_sha": settings.git_sha,
     }
 
 

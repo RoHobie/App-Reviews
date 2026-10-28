@@ -17,7 +17,7 @@ import logging
 import random
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple, Type, TypeVar
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -31,25 +31,37 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class GeminiClient(LLMClient):
-    """Client for Google Gemini models via google-genai SDK."""
+    """Client for Google Gemini models via google-genai SDK with multi-key rotation."""
 
-    def __init__(self):
-        api_key = settings.gemini_api_key
-        if not api_key:
+    def __init__(self, api_keys: Optional[List[str]] = None):
+        keys = api_keys or settings.get_gemini_api_keys()
+        if not keys:
             raise LLMUnavailableError(
-                "Missing GEMINI_API_KEY environment variable. "
+                "Missing GEMINI_API_KEY / GEMINI_API_KEYS. "
                 "Please configure GEMINI_API_KEY in your .env file or environment.",
                 retryable=False,
             )
 
         try:
             from google import genai
-            self.client = genai.Client(api_key=api_key)
+            self._clients = [genai.Client(api_key=k) for k in keys]
         except Exception as exc:
             raise LLMUnavailableError(f"Failed to initialize google-genai client: {exc}")
 
+        self._key_count = len(self._clients)
+        self._key_index = 0
+        self._lock = threading.Lock()
+        self._rate_lock = threading.Lock()
+        self._last_call_time = 0.0
         # Concurrency throttle for rate limits
         self._semaphore = threading.Semaphore(settings.max_llm_concurrency)
+
+    def _get_next_client(self):
+        """Round-robin rotation across configured API keys."""
+        with self._lock:
+            client = self._clients[self._key_index]
+            self._key_index = (self._key_index + 1) % self._key_count
+            return client
 
     def _call_raw_provider(
         self,
@@ -58,7 +70,8 @@ class GeminiClient(LLMClient):
         temperature: float,
         model_name: str,
     ) -> Tuple[Dict[str, Any], Dict[str, int]]:
-        """Invokes Gemini generate_content with structured JSON output."""
+        """Invokes Gemini generate_content with structured JSON output and rate-limit handling."""
+        import re
         from google.genai import types
 
         config = types.GenerateContentConfig(
@@ -67,14 +80,27 @@ class GeminiClient(LLMClient):
             response_schema=schema,
         )
 
-        max_quota_retries = 4
+        max_quota_retries = 6
         last_quota_error = None
 
         with self._semaphore:
             for attempt in range(max_quota_retries):
+                # Polite inter-request spacing to avoid burst hammering
+                with self._rate_lock:
+                    now = time.time()
+                    elapsed = now - self._last_call_time
+                    min_spacing = 0.4
+                    if elapsed < min_spacing:
+                        time.sleep(min_spacing - elapsed)
+                    self._last_call_time = time.time()
+
                 try:
-                    logger.debug("Calling Gemini model %s (attempt %d/%d)", model_name, attempt + 1, max_quota_retries)
-                    response = self.client.models.generate_content(
+                    client = self._get_next_client()
+                    logger.debug(
+                        "Calling Gemini model %s (attempt %d/%d, key pool size: %d)",
+                        model_name, attempt + 1, max_quota_retries, self._key_count
+                    )
+                    response = client.models.generate_content(
                         model=model_name,
                         contents=prompt,
                         config=config,
@@ -112,13 +138,31 @@ class GeminiClient(LLMClient):
                     raise
                 except Exception as exc:
                     err_msg = str(exc).lower()
-                    # Detect 429 quota / rate limit errors
-                    if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg:
+                    # Detect 429 quota / rate limit / 503 unavailable / resource exhausted errors
+                    is_transient = (
+                        "429" in err_msg
+                        or "quota" in err_msg
+                        or "rate limit" in err_msg
+                        or "resource_exhausted" in err_msg
+                        or "too many requests" in err_msg
+                        or "503" in err_msg
+                        or "unavailable" in err_msg
+                        or "service unavailable" in err_msg
+                        or "overloaded" in err_msg
+                        or "server error" in err_msg
+                    )
+                    if is_transient:
                         last_quota_error = exc
-                        sleep_time = (2 ** attempt) + random.uniform(0.5, 1.5)
+                        # Check for retry-after hint in error message
+                        retry_hint = re.search(r"retry[- ]after[:\s]+(\d+(?:\.\d+)?)", err_msg)
+                        if retry_hint:
+                            sleep_time = float(retry_hint.group(1)) + random.uniform(0.5, 1.5)
+                        else:
+                            sleep_time = min(60.0, (2 ** attempt) * 1.5 + random.uniform(1.0, 3.0))
+
                         logger.warning(
-                            "Gemini rate limit / quota encountered (attempt %d/%d). Sleeping %.2fs...",
-                            attempt + 1, max_quota_retries, sleep_time
+                            "Gemini transient error (429/503/quota) encountered (attempt %d/%d). Sleeping %.2fs before retry... (%s)",
+                            attempt + 1, max_quota_retries, sleep_time, exc
                         )
                         time.sleep(sleep_time)
                     else:
